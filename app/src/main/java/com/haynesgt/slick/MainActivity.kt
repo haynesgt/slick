@@ -1,27 +1,29 @@
 package com.haynesgt.slick
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.ui.Modifier
-import com.haynesgt.slick.ui.theme.SlickTheme
+import android.widget.Button
+import android.widget.LinearLayout
+import androidx.appcompat.app.AppCompatActivity
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            SlickTheme {
-                // A surface container using the 'background' color from the theme
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    BakingScreen()
-                }
-            }
+
+        // Create com.haynesgt.slick.WhiteboardView and Button
+        //val whiteboardView = WhiteboardView(this)
+        val whiteboardView = WhiteboardSurfaceView(this)
+        val clearButton = Button(this).apply {
+            text = "Clear"
+            setOnClickListener { whiteboardView.clear() }
         }
+
+        // Add to a layout
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(whiteboardView, 0)
+            addView(clearButton, 0)
+        }
+
+        setContentView(layout)
     }
 }
