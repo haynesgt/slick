@@ -15,7 +15,7 @@ data class Vector2D(val x: Float, val y: Float)
 class LowLatencyWhiteboardFeature(context: SurfaceView) {
 
     private val paint: Paint = Paint().apply {
-        color = Color.BLUE
+        color = Color.WHITE
         strokeWidth = 1f
         style = Paint.Style.STROKE
         isAntiAlias = true
@@ -34,7 +34,6 @@ class LowLatencyWhiteboardFeature(context: SurfaceView) {
                 bufferHeight: Int,
                 param: Pair<Vector2D, Vector2D>
             ) {
-                // draw line
                 canvas.drawLine(param.first.x, param.first.y, param.second.x, param.second.y, paint)
             }
 
@@ -44,8 +43,7 @@ class LowLatencyWhiteboardFeature(context: SurfaceView) {
                 bufferHeight: Int,
                 params: Collection<Pair<Vector2D, Vector2D>>
             ) {
-                // Redraw all finalized
-                canvas.drawColor(Color.WHITE)
+                canvas.drawColor(Color.rgb(49,49,49))
 
                 for (stroke in strokes)
                 {
@@ -58,12 +56,6 @@ class LowLatencyWhiteboardFeature(context: SurfaceView) {
                     }
                     canvas.drawPath(path, paint)
                 }
-                val path = android.graphics.Path()
-                for (param in params) {
-                    path.moveTo(param.first.x, param.first.y)
-                    path.lineTo(param.second.x, param.second.y)
-                }
-                canvas.drawPath(path, paint)
             }
         }
     )
@@ -77,16 +69,18 @@ class LowLatencyWhiteboardFeature(context: SurfaceView) {
         val newPoint = Vector2D(x, y)
         renderer.renderFrontBufferedLayer(Pair(lastPoint, newPoint))
         lastPoint = newPoint
-        currentStroke.add(lastPoint)
+        currentStroke.add(newPoint)
     }
 
     fun commit() {
-        renderer.commit()
         strokes.add(currentStroke)
         currentStroke = mutableListOf()
+        renderer.commit()
     }
 
     fun clear() {
+        strokes.clear()
         renderer.clear()
+        renderer.commit()
     }
 }

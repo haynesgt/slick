@@ -78,6 +78,6 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     }
 
     fun clear() {
-        //lowLatencyWhiteboardFeature.clear()
+        lowLatencyWhiteboardFeature.clear()
     }
 }
