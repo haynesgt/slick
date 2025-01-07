@@ -12,65 +12,78 @@ import androidx.graphics.lowlatency.CanvasFrontBufferedRenderer
 data class Vector2D(val x: Float, val y: Float)
 
 @RequiresApi(Build.VERSION_CODES.Q)
-class LowLatencyWhiteboardFeature(context: SurfaceView) : DrawingFeature {
+class LowLatencyWhiteboardFeature(context: SurfaceView) {
 
     private val paint: Paint = Paint().apply {
         color = Color.BLUE
-        strokeWidth = 10f
+        strokeWidth = 1f
         style = Paint.Style.STROKE
         isAntiAlias = true
     }
 
-    private val renderer: CanvasFrontBufferedRenderer<Vector2D> = CanvasFrontBufferedRenderer(
+    private var strokes = mutableListOf<List<Vector2D>>()
+    private var lastPoint = Vector2D(0f, 0f)
+    private var currentStroke = mutableListOf<Vector2D>()
+
+    private val renderer: CanvasFrontBufferedRenderer<Pair<Vector2D, Vector2D>> = CanvasFrontBufferedRenderer(
         context,
-        object : CanvasFrontBufferedRenderer.Callback<Vector2D> {
+        object : CanvasFrontBufferedRenderer.Callback<Pair<Vector2D, Vector2D>> {
             override fun onDrawFrontBufferedLayer(
                 canvas: Canvas,
                 bufferWidth: Int,
                 bufferHeight: Int,
-                param: Vector2D
+                param: Pair<Vector2D, Vector2D>
             ) {
-                // Draw a triangle at the given position
-                drawTriangleAtPosition(canvas, param.x, param.y)
+                // draw line
+                canvas.drawLine(param.first.x, param.first.y, param.second.x, param.second.y, paint)
             }
 
             override fun onDrawMultiBufferedLayer(
                 canvas: Canvas,
                 bufferWidth: Int,
                 bufferHeight: Int,
-                params: Collection<Vector2D>
+                params: Collection<Pair<Vector2D, Vector2D>>
             ) {
-                // Redraw all finalized strokes
-                for (param in params) {
-                    drawTriangleAtPosition(canvas, param.x, param.y)
+                // Redraw all finalized
+                canvas.drawColor(Color.WHITE)
+
+                for (stroke in strokes)
+                {
+                    if (stroke.size < 2)
+                        continue
+                    val path = android.graphics.Path()
+                    path.moveTo(stroke.first().x, stroke.first().y)
+                    for (point in stroke) {
+                        path.lineTo(point.x, point.y)
+                    }
+                    canvas.drawPath(path, paint)
                 }
+                val path = android.graphics.Path()
+                for (param in params) {
+                    path.moveTo(param.first.x, param.first.y)
+                    path.lineTo(param.second.x, param.second.y)
+                }
+                canvas.drawPath(path, paint)
             }
         }
     )
 
-    private fun drawTriangleAtPosition(canvas: Canvas, x: Float, y: Float) {
-        // Define triangle vertices relative to the point (x, y)
-        val size = 50f // Size of the triangle
-        val halfSize = size / 2
-        val path = android.graphics.Path().apply {
-            moveTo(x, y - halfSize) // Top
-            lineTo(x - halfSize, y + halfSize) // Bottom left
-            lineTo(x + halfSize, y + halfSize) // Bottom right
-            close()
-        }
-
-        // Draw the triangle
-        canvas.drawPath(path, paint)
+    fun beginAt(x: Float, y: Float) {
+        lastPoint = Vector2D(x, y)
+        currentStroke = mutableListOf(lastPoint)
     }
 
-    override fun render(event: MotionEvent) {
-        val x = event.x
-        val y = event.y
-        renderer.renderFrontBufferedLayer(Vector2D(x, y))
+    fun moveTo(x: Float, y: Float) {
+        val newPoint = Vector2D(x, y)
+        renderer.renderFrontBufferedLayer(Pair(lastPoint, newPoint))
+        lastPoint = newPoint
+        currentStroke.add(lastPoint)
     }
 
-    override fun commit() {
+    fun commit() {
         renderer.commit()
+        strokes.add(currentStroke)
+        currentStroke = mutableListOf()
     }
 
     fun clear() {

@@ -1,4 +1,4 @@
-package com.haynesgt.slick;
+package com.haynesgt.slick
 
 import android.content.Context;
 import android.graphics.Canvas
@@ -9,11 +9,12 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView;
 import androidx.annotation.RequiresApi
 
+@RequiresApi(Build.VERSION_CODES.Q)
 class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : SurfaceView(context, attrs),
     SurfaceHolder.Callback {
 
         @RequiresApi(Build.VERSION_CODES.Q)
-        val lowLatencyFeature = LowLatencyWhiteboardFeature(this)
+        val lowLatencyWhiteboardFeature = LowLatencyWhiteboardFeature(this)
 
     inner class DrawingThread(private val surfaceHolder: SurfaceHolder) : Thread() {
         var isRunning = true
@@ -56,24 +57,27 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         //TODO("Not yet implemented")
     }
 
-    @RequiresApi(Build.VERSION_CODES.Q)
+    override fun performClick(): Boolean {
+        lowLatencyWhiteboardFeature.commit()
+        return super.performClick()
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                // Handle touch down event
+                lowLatencyWhiteboardFeature.beginAt(event.x, event.y)
             }
             MotionEvent.ACTION_MOVE -> {
-                // Handle touch move event
-                lowLatencyFeature.render(event)
+                lowLatencyWhiteboardFeature.moveTo(event.x, event.y)
             }
             MotionEvent.ACTION_UP -> {
-                // Handle touch up event
+                performClick()
             }
         }
         return true
     }
 
     fun clear() {
-        // Clear the whiteboard canvas
+        //lowLatencyWhiteboardFeature.clear()
     }
 }
