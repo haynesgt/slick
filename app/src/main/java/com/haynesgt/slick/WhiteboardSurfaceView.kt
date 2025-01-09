@@ -19,7 +19,6 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     inner class DrawingThread(private val surfaceHolder: SurfaceHolder) : Thread() {
         var isRunning = true
 
-
         override fun run() {
             while (isRunning) {
                 var canvas: Canvas? = null
@@ -63,6 +62,10 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        // ignore non-stylus events
+        if (event.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
+            return true
+        }
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 lowLatencyWhiteboardFeature.beginAt(event.x, event.y)

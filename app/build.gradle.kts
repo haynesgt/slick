@@ -3,6 +3,9 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.android.libraries.mapsplatform.secrets.gradle.plugin)
+
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.8.22"
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -55,6 +58,8 @@ dependencies {
     implementation(libs.generativeai)
     implementation(libs.androidx.graphics.core)
     implementation(libs.androidx.appcompat)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.room.runtime)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -63,4 +68,8 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
+
+    implementation(libs.androidsvg)
 }

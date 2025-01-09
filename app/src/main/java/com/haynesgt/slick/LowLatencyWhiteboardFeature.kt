@@ -9,8 +9,6 @@ import android.view.SurfaceView
 import androidx.annotation.RequiresApi
 import androidx.graphics.lowlatency.CanvasFrontBufferedRenderer
 
-data class Vector2D(val x: Float, val y: Float)
-
 @RequiresApi(Build.VERSION_CODES.Q)
 class LowLatencyWhiteboardFeature(context: SurfaceView) {
 
