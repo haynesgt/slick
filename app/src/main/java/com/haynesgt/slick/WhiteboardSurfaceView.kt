@@ -27,6 +27,8 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         isAntiAlias = true
     }
 
+    private lateinit var viewModel: WhiteboardViewModel
+
     private val renderer: CanvasFrontBufferedRenderer<Pair<Vector2D, Vector2D>> = CanvasFrontBufferedRenderer(
         this,
         object : CanvasFrontBufferedRenderer.Callback<Pair<Vector2D, Vector2D>> {
@@ -45,31 +47,44 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                 bufferHeight: Int,
                 params: Collection<Pair<Vector2D, Vector2D>>
             ) {
-
+                val strokes = viewModel.strokes.value
+                if (strokes != null) {
+                    drawStrokes(canvas, strokes)
+                }
             }
         }
     )
 
     var onTapped: (() -> Unit)? = null
-
     var onPenDown: ((Vector2D) -> Unit)? = null
     var onPenMove: ((Vector2D) -> Unit)? = null
     var onPenUp: ((Vector2D) -> Unit)? = null
 
     fun bindViewModel(viewModel: WhiteboardViewModel, owner: LifecycleOwner) {
+        this.viewModel = viewModel
         viewModel.currentStroke.observe(owner) { stroke ->
             if (stroke != null) {
-                drawLastLinesOfCurrentStroke(stroke.points)
+                drawLastLineOfCurrentStroke(stroke.points)
             }
         }
         viewModel.strokes.observe(owner) { strokes ->
-            drawStrokes(strokes)
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.lastStrokeCompleteAt.observe(owner) { lastStrokeCompleteAt ->
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
         }
     }
 
     private val gestureDetector: GestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-            performClick()
+            if  (e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
+                return false
+            }
+            onTapped?.invoke()
             return true
         }
         override fun  onDoubleTap(e: MotionEvent): Boolean {
@@ -128,36 +143,25 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         return true
     }
 
-    private fun drawLastLinesOfCurrentStroke(points: List<Vector2D>) {
+    private fun drawLastLineOfCurrentStroke(points: List<Vector2D>) {
         if (points.size < 2) {
             return
         }
         this.renderer.renderFrontBufferedLayer(Pair(points[points.size - 2], points[points.size - 1]))
     }
 
-    private fun drawStrokes(strokes: List<Stroke>) {
-        var canvas: Canvas? = null
-        try {
-            canvas = holder.lockCanvas()
-            if (canvas == null) {
-                return
+    private fun drawStrokes(canvas: Canvas, strokes: List<Stroke>) {
+        canvas.drawColor(Color.rgb(49, 49, 49))
+        for (stroke in strokes) {
+            if (stroke.points.size < 2) {
+                continue
             }
-            canvas.drawColor(Color.rgb(49, 49, 49))
-            for (stroke in strokes) {
-                if (stroke.points.size < 2) {
-                    continue
-                }
-                val path = Path()
-                path.moveTo(stroke.points[0].x, stroke.points[0].y)
-                for (point in stroke.points) {
-                    path.lineTo(point.x, point.y)
-                }
-                canvas.drawPath(path, paint)
+            val path = Path()
+            path.moveTo(stroke.points[0].x, stroke.points[0].y)
+            for (point in stroke.points) {
+                path.lineTo(point.x, point.y)
             }
-        } finally {
-            if (canvas != null) {
-                holder.unlockCanvasAndPost(canvas)
-            }
+            canvas.drawPath(path, paint)
         }
     }
 }

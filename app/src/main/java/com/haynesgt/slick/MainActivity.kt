@@ -19,7 +19,7 @@ class MainActivity : AppCompatActivity() {
 
         val whiteboardView = WhiteboardSurfaceView(this)
 
-        var drawingBoardSvgService = DrawingBoardSvgService()
+        val drawingBoardSvgService = DrawingBoardSvgService(this)
 
         whiteboardViewModel = ViewModelProvider(this)[WhiteboardViewModel::class.java]
         whiteboardView.bindViewModel(whiteboardViewModel, this)
@@ -34,9 +34,15 @@ class MainActivity : AppCompatActivity() {
         }
         whiteboardView.onPenUp = { point ->
             whiteboardViewModel.completeCurrentStrokeAt(point)
+            drawingBoardSvgService.saveStrokesToFile("test.svg", whiteboardViewModel.strokes.value!!)
         }
 
-        whiteboardViewModel.toggleControlsVisibility()
+        try {
+            val strokes = drawingBoardSvgService.loadStrokesFromFile("test.svg")
+            whiteboardViewModel.setStrokes(strokes)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         val clearButton = Button(this).apply {
             text = "Clear"

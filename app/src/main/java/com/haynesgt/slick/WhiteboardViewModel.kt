@@ -54,7 +54,7 @@ class WhiteboardViewModel : ViewModel() {
     fun completeCurrentStrokeAt(point: Vector2D) {
         val currentStroke = _currentStroke.value
         if (currentStroke != null) {
-            _currentStroke.value = Stroke(currentStroke.id, currentStroke.points.plus(point))
+            addPointToCurrentStroke(point)
             completeCurrentStroke()
         } else {
             startNewStrokeAt(point)
@@ -63,15 +63,19 @@ class WhiteboardViewModel : ViewModel() {
     }
 
     fun completeCurrentStroke() {
-        _lastStrokeCompleteAt.value = System.currentTimeMillis()
         if (_currentStroke.value != null) {
             addStroke(_currentStroke.value!!)
             _currentStroke.value = null
+            _lastStrokeCompleteAt.value = System.currentTimeMillis()
         }
     }
 
     fun toggleControlsVisibility() {
         val currentVisibility = (controlsVisible.value ?: false).not()
         _controlsVisible.value = currentVisibility
+    }
+
+    fun setStrokes(strokes: List<Stroke>) {
+        _strokes.value = strokes
     }
 }
