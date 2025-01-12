@@ -5,10 +5,10 @@ import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.File
 
-data class Stroke(
+data class Stroke (
     val id: String?,
     // val style: StrokeStyle,
-    val points: List<Vector2D>)
+    val points: MutableList<Vector2D>)
 
 class DrawingBoardSvgService {
 
@@ -21,8 +21,6 @@ class DrawingBoardSvgService {
             ?.map { it.name }
             ?: emptyList()
     }
-
-
 
     fun loadStrokesFromFile(fileName: String): List<List<Vector2D>> {
         val file = File(folderName, fileName)

@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas
 import android.os.Build
 import android.util.AttributeSet
+import android.view.GestureDetector
 import android.view.MotionEvent;
 import android.view.SurfaceHolder
 import android.view.SurfaceView;
@@ -13,7 +14,19 @@ import androidx.annotation.RequiresApi
 class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : SurfaceView(context, attrs),
     SurfaceHolder.Callback {
 
-        @RequiresApi(Build.VERSION_CODES.Q)
+    var onTapped: (() -> Unit)? = null
+
+    private val gestureDetector: GestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun  onDoubleTap(e: MotionEvent): Boolean {
+            if  (e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
+                return true
+            }
+            onTapped?.invoke()
+            return true
+        }
+    })
+
+    @RequiresApi(Build.VERSION_CODES.Q)
         val lowLatencyWhiteboardFeature = LowLatencyWhiteboardFeature(this)
 
     inner class DrawingThread(private val surfaceHolder: SurfaceHolder) : Thread() {
@@ -62,9 +75,10 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        //if (gestureDetector.onTouchEvent(event)) { return true}
         // ignore non-stylus events
         if (event.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
-            return true
+            return false
         }
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
@@ -82,5 +96,9 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
 
     fun clear() {
         lowLatencyWhiteboardFeature.clear()
+    }
+
+    fun undo() {
+
     }
 }

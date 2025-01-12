@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.google.android.libraries.mapsplatform.secrets.gradle.plugin)
 
     id("org.jetbrains.kotlin.plugin.serialization") version "1.8.22"
+    id("kotlin-kapt")
     id("com.google.devtools.ksp")
 }
 
@@ -41,6 +42,14 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        dataBinding = true
+        /*
+        other common options:
+        viewBinding = true
+        aidl = true
+        renderScript = true
+        shaders = true
+         */
     }
 }
 
