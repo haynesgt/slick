@@ -8,7 +8,7 @@ import kotlin.random.Random
 class WhiteboardViewModel : ViewModel() {
     private val _strokes = mutableListOf<Stroke>()
 
-    val controlsVisible: MutableLiveData<Boolean> = MutableLiveData(true)
+    val controlsVisible: MutableLiveData<Boolean> = MutableLiveData(false)
 
     fun addStroke(stroke: Stroke) {
         _strokes.add(stroke)

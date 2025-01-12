@@ -16,14 +16,15 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val whiteboardView = WhiteboardSurfaceView(this)
+
         var drawingBoardSvgService = DrawingBoardSvgService()
 
         whiteboardViewModel = ViewModelProvider(this)[WhiteboardViewModel::class.java]
-
-        val whiteboardView = WhiteboardSurfaceView(this)
         whiteboardView.onTapped = {
             whiteboardViewModel.toggleControlsVisibility()
         }
+        whiteboardViewModel.toggleControlsVisibility()
 
         val clearButton = Button(this).apply {
             text = "Clear"
@@ -50,6 +51,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             addView(previousPageButton, 0)
             addView(nextPageButton, 0)
+            addView(clearButton, 0)
         }
 
         // Add to a layout

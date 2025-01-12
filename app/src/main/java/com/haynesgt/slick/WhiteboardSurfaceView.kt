@@ -19,7 +19,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     private val gestureDetector: GestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun  onDoubleTap(e: MotionEvent): Boolean {
             if  (e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
-                return true
+                return false
             }
             onTapped?.invoke()
             return true
@@ -75,10 +75,10 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        //if (gestureDetector.onTouchEvent(event)) { return true}
+        if (gestureDetector.onTouchEvent(event)) { return true }
         // ignore non-stylus events
         if (event.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
-            return false
+            return true
         }
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
