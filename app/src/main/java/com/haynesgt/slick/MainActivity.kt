@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
@@ -21,14 +22,25 @@ class MainActivity : AppCompatActivity() {
         var drawingBoardSvgService = DrawingBoardSvgService()
 
         whiteboardViewModel = ViewModelProvider(this)[WhiteboardViewModel::class.java]
+        whiteboardView.bindViewModel(whiteboardViewModel, this)
         whiteboardView.onTapped = {
             whiteboardViewModel.toggleControlsVisibility()
         }
+        whiteboardView.onPenDown = { point ->
+            whiteboardViewModel.startNewStrokeAt(point)
+        }
+        whiteboardView.onPenMove = { point ->
+            whiteboardViewModel.addPointToCurrentStroke(point)
+        }
+        whiteboardView.onPenUp = { point ->
+            whiteboardViewModel.completeCurrentStrokeAt(point)
+        }
+
         whiteboardViewModel.toggleControlsVisibility()
 
         val clearButton = Button(this).apply {
             text = "Clear"
-            setOnClickListener { whiteboardView.clear() }
+            setOnClickListener { whiteboardViewModel.clearStrokes() }
         }
 
         val previousPageButton = Button(this).apply {
@@ -55,10 +67,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Add to a layout
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(whiteboardView, 0)
+        val layout = FrameLayout(this).apply {
             addView(buttonLayout, 0)
+            addView(whiteboardView, 0)
         }
 
         whiteboardViewModel.controlsVisible.observe(this) { controlsVisible ->

@@ -6,46 +6,72 @@ import androidx.lifecycle.ViewModel
 import kotlin.random.Random
 
 class WhiteboardViewModel : ViewModel() {
-    private val _strokes = mutableListOf<Stroke>()
+    private val _strokes: MutableLiveData<List<Stroke>> = MutableLiveData(listOf())
+    val strokes: LiveData<List<Stroke>> get() = _strokes
 
-    val controlsVisible: MutableLiveData<Boolean> = MutableLiveData(false)
+    private val _controlsVisible: MutableLiveData<Boolean> = MutableLiveData(false)
+    val controlsVisible: LiveData<Boolean> get() = _controlsVisible
 
-    fun addStroke(stroke: Stroke) {
-        _strokes.add(stroke)
-    }
+    private val _currentStroke: MutableLiveData<Stroke?> = MutableLiveData(null)
+    val currentStroke: LiveData<Stroke?> get() = _currentStroke
 
-    fun getStrokes(): List<Stroke> {
-        return _strokes.toList()
+    private val _lastStrokeCompleteAt: MutableLiveData<Long> = MutableLiveData(0)
+    val lastStrokeCompleteAt: LiveData<Long> get() = _lastStrokeCompleteAt
+
+    private fun addStroke(stroke: Stroke) {
+        _strokes.value = _strokes.value?.plus(stroke)
     }
 
     fun clearStrokes() {
-        _strokes.clear()
+        _strokes.value = listOf()
     }
 
     fun undoStroke() {
-        if (_strokes.isNotEmpty()) {
-            _strokes.removeAt(_strokes.size - 1)
+        if (_strokes.value?.isNotEmpty() == true) {
+            _strokes.value = _strokes.value?.dropLast(1)
         }
     }
 
     fun startNewStrokeAt(point: Vector2D): Stroke {
         val id = Random.nextLong().toString()
-        val stroke = Stroke(id, mutableListOf(point))
-        _strokes.add(stroke)
+        if (_currentStroke.value != null) {
+            completeCurrentStroke()
+        }
+        val stroke = Stroke(id, listOf(point))
+        _currentStroke.value = stroke
         return stroke
     }
 
     fun addPointToCurrentStroke(point: Vector2D) {
-        if (_strokes.isEmpty()) {
-            startNewStrokeAt(point)
+        val currentStroke = _currentStroke.value
+        if (currentStroke != null) {
+            _currentStroke.value = Stroke(currentStroke.id, currentStroke.points.plus(point))
         } else {
-            val currentStroke = _strokes.last()
-            currentStroke.points.add(point)
+            startNewStrokeAt(point)
+        }
+    }
+
+    fun completeCurrentStrokeAt(point: Vector2D) {
+        val currentStroke = _currentStroke.value
+        if (currentStroke != null) {
+            _currentStroke.value = Stroke(currentStroke.id, currentStroke.points.plus(point))
+            completeCurrentStroke()
+        } else {
+            startNewStrokeAt(point)
+            completeCurrentStroke()
+        }
+    }
+
+    fun completeCurrentStroke() {
+        _lastStrokeCompleteAt.value = System.currentTimeMillis()
+        if (_currentStroke.value != null) {
+            addStroke(_currentStroke.value!!)
+            _currentStroke.value = null
         }
     }
 
     fun toggleControlsVisibility() {
         val currentVisibility = (controlsVisible.value ?: false).not()
-        controlsVisible.value = currentVisibility
+        _controlsVisible.value = currentVisibility
     }
 }

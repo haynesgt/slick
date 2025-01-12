@@ -8,7 +8,7 @@ import java.io.File
 data class Stroke (
     val id: String?,
     // val style: StrokeStyle,
-    val points: MutableList<Vector2D>)
+    val points: List<Vector2D>)
 
 class DrawingBoardSvgService {
 
