@@ -81,4 +81,5 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidsvg)
+    implementation(libs.pdfbox)
 }

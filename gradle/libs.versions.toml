@@ -15,6 +15,7 @@ generativeai = "0.2.2"
 googleAndroidLibrariesMapsplatformSecretsGradlePlugin = "2.0.1"
 graphicsCore = "1.0.2"
 appcompat = "1.7.0"
+pdfbox = "3.0.3"
 roomCompiler = "2.6.1"
 roomRuntime = "2.6.1"
 
@@ -41,6 +42,7 @@ androidx-graphics-core = { group = "androidx.graphics", name = "graphics-core", 
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "roomRuntime" }
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

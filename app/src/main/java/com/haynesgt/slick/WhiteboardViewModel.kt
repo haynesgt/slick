@@ -18,6 +18,9 @@ class WhiteboardViewModel : ViewModel() {
     private val _lastStrokeCompleteAt: MutableLiveData<Long> = MutableLiveData(0)
     val lastStrokeCompleteAt: LiveData<Long> get() = _lastStrokeCompleteAt
 
+    private val _fileName: MutableLiveData<String> = MutableLiveData("test.svg")
+    val fileName: LiveData<String> get() = _fileName
+
     private fun addStroke(stroke: Stroke) {
         _strokes.value = _strokes.value?.plus(stroke)
     }
@@ -77,5 +80,9 @@ class WhiteboardViewModel : ViewModel() {
 
     fun setStrokes(strokes: List<Stroke>) {
         _strokes.value = strokes
+    }
+
+    fun setFileName(string: String) {
+        _fileName.value = string
     }
 }

@@ -4,3 +4,30 @@ save to cloud
 change pen
 change background
 background pattern or image
+
+
+# Use Cases
+
+I want to be able to open the app and immediately resume working on a page if I had a document open,
+or work on a new document otherwise.
+
+I want to be able to just draw with no other elements visible.
+
+I want to be able to access the options and controls of the app by tapping the device.
+
+I want to be able to switch to a recent document in one click from the main controls page.
+
+I want to be able to navigate all my documents in the controls page.
+
+I want to be able to save to PDF
+
+I want to be able to edit the file on one device and resume editing it on another
+
+I want PDFs of all my files to be in Google Drive automatically
+
+
+# Design Ideas
+
+The drawing surface is central to the app and should always be at hand.
+Other views should exist around the surface, and the drawing surface should always be a tap away.
+

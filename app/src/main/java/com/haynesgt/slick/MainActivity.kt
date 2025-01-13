@@ -17,11 +17,26 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // load shared preferences
+        val sharedPreferences = getSharedPreferences("app_prefs", MODE_PRIVATE)
+        if (sharedPreferences.getBoolean("first_run", true)) {
+            // do something the first time the app is launched
+            sharedPreferences.edit().putBoolean("first_run", false).apply()
+        }
+        if (sharedPreferences.getString("current_file", null) == null) {
+            sharedPreferences.edit().putString("current_file", "test.svg").apply()
+        }
+
         val whiteboardView = WhiteboardSurfaceView(this)
 
         val drawingBoardSvgService = DrawingBoardSvgService(this)
 
         whiteboardViewModel = ViewModelProvider(this)[WhiteboardViewModel::class.java]
+        whiteboardViewModel.setFileName(sharedPreferences.getString("current_file", "test.svg")!!)
+        whiteboardViewModel.fileName.observe(this) { fileName ->
+            sharedPreferences.edit().putString("current_file", fileName).apply()
+        }
+
         whiteboardView.bindViewModel(whiteboardViewModel, this)
         whiteboardView.onTapped = {
             whiteboardViewModel.toggleControlsVisibility()
