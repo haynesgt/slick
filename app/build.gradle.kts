@@ -51,6 +51,10 @@ android {
         shaders = true
          */
     }
+
+    packaging {
+        resources.excludes.add("META-INF/DEPENDENCIES")
+    }
 }
 
 dependencies {
@@ -82,4 +86,9 @@ dependencies {
 
     implementation(libs.androidsvg)
     //implementation(libs.pdfbox)
+
+    implementation(libs.play.services.auth) // Google Sign-In
+    implementation(libs.google.api.client.android)
+    implementation(libs.google.api.services.drive)
+
 }

@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
+import java.io.File
 import java.io.FileNotFoundException
 
 @RequiresApi(Build.VERSION_CODES.Q)
@@ -30,6 +31,7 @@ class MainActivity : AppCompatActivity() {
 
         val whiteboardView = WhiteboardSurfaceView(this)
 
+        val sendThingsService = SendThingsService()
         val drawingBoardSvgService = DrawingBoardSvgService(this)
 
         whiteboardViewModel = ViewModelProvider(this)[WhiteboardViewModel::class.java]
@@ -117,6 +119,17 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val sendButton = Button(this).apply {
+            text = "Send"
+            setOnClickListener {
+                sendThingsService.sendData(
+                    File(filesDir, "drawings/" + whiteboardViewModel.fileName.value!!),
+                    this@MainActivity,
+                    this@MainActivity
+                )
+            }
+        }
+
         window.decorView.systemUiVisibility = (
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                         or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -139,8 +152,11 @@ class MainActivity : AppCompatActivity() {
 
         val buttonLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(previousPageButton, 0)
-            addView(nextPageButton, 1)
+            var buttonI = 0
+            addView(previousPageButton, buttonI++)
+            addView(nextPageButton, buttonI++)
+            addView(sendButton, buttonI++)
+            assert(buttonI>1)
             //addView(clearButton, 2)
         }
 
