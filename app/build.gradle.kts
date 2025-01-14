@@ -15,7 +15,7 @@ android {
 
     defaultConfig {
         applicationId = "com.haynesgt.slick"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -81,5 +81,5 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidsvg)
-    implementation(libs.pdfbox)
+    //implementation(libs.pdfbox)
 }

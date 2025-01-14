@@ -26,8 +26,15 @@ I want to be able to edit the file on one device and resume editing it on anothe
 I want PDFs of all my files to be in Google Drive automatically
 
 
+
+
 # Design Ideas
 
 The drawing surface is central to the app and should always be at hand.
 Other views should exist around the surface, and the drawing surface should always be a tap away.
 
+# App Structure
+
+Main Board
+- draw strokes with a pen
+-

@@ -9,6 +9,7 @@ import android.widget.LinearLayout
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
+import java.io.FileNotFoundException
 
 @RequiresApi(Build.VERSION_CODES.Q)
 class MainActivity : AppCompatActivity() {
@@ -23,21 +24,29 @@ class MainActivity : AppCompatActivity() {
             // do something the first time the app is launched
             sharedPreferences.edit().putBoolean("first_run", false).apply()
         }
-        if (sharedPreferences.getString("current_file", null) == null) {
-            sharedPreferences.edit().putString("current_file", "test.svg").apply()
-        }
 
         val whiteboardView = WhiteboardSurfaceView(this)
 
         val drawingBoardSvgService = DrawingBoardSvgService(this)
 
         whiteboardViewModel = ViewModelProvider(this)[WhiteboardViewModel::class.java]
-        whiteboardViewModel.setFileName(sharedPreferences.getString("current_file", "test.svg")!!)
         whiteboardViewModel.fileName.observe(this) { fileName ->
             sharedPreferences.edit().putString("current_file", fileName).apply()
+            try {
+                val strokes = drawingBoardSvgService.loadStrokesFromFile(fileName)
+                whiteboardViewModel.setStrokes(strokes)
+            } catch (e: FileNotFoundException) {
+                whiteboardViewModel.setStrokes(emptyList())
+                drawingBoardSvgService.saveStrokesToFile(fileName, emptyList())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
         whiteboardView.bindViewModel(whiteboardViewModel, this)
+
+        whiteboardViewModel.setFileName(sharedPreferences.getString("current_file", "test.svg")!!)
+
         whiteboardView.onTapped = {
             whiteboardViewModel.toggleControlsVisibility()
         }
@@ -49,16 +58,8 @@ class MainActivity : AppCompatActivity() {
         }
         whiteboardView.onPenUp = { point ->
             whiteboardViewModel.completeCurrentStrokeAt(point)
-            drawingBoardSvgService.saveStrokesToFile("test.svg", whiteboardViewModel.strokes.value!!)
+            drawingBoardSvgService.saveStrokesToFile(whiteboardViewModel.fileName.value!!, whiteboardViewModel.strokes.value!!)
         }
-
-        try {
-            val strokes = drawingBoardSvgService.loadStrokesFromFile("test.svg")
-            whiteboardViewModel.setStrokes(strokes)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
         val clearButton = Button(this).apply {
             text = "Clear"
             setOnClickListener { whiteboardViewModel.clearStrokes() }
@@ -67,24 +68,57 @@ class MainActivity : AppCompatActivity() {
         val previousPageButton = Button(this).apply {
             text = "Previous Page"
             setOnClickListener {
-                val intent = Intent(this@MainActivity, MainActivity::class.java)
-                startActivity(intent)
+                // find the number before the dot in the fileName and decrement it, or add one
+                // if it is not there
+                if (whiteboardViewModel.fileName.value!!.contains(".")) {
+                    val fileName = whiteboardViewModel.fileName.value!!.split(".")[0]
+                    val pageNumberRegex = Regex("\\d+")
+                    val pageNumberMatch = pageNumberRegex.find(fileName)
+
+                    if (pageNumberMatch != null) {
+                        val pageNumber = 1.coerceAtLeast(pageNumberMatch.value.toInt() - 1)
+                        val newFileName = fileName.replace(pageNumberMatch.value, pageNumber.toString())
+                        whiteboardViewModel.setFileName("$newFileName.svg")
+                    } else {
+                        whiteboardViewModel.setFileName("${whiteboardViewModel.fileName.value!!.split(".")[0]}-1.svg")
+                    }
+                }
             }
         }
 
         val nextPageButton = Button(this).apply {
             text = "Next Page"
             setOnClickListener {
-                val intent = Intent(this@MainActivity, MainActivity::class.java)
-                startActivity(intent)
+                // find the number before the dot in the fileName and increment it, or add one
+                // if it is not there
+                if (whiteboardViewModel.fileName.value!!.contains(".")) {
+                    val fileName = whiteboardViewModel.fileName.value!!.split(".")[0]
+                    val pageNumberRegex = Regex("\\d+")
+                    val pageNumberMatch = pageNumberRegex.find(fileName)
+
+                    if (pageNumberMatch != null) {
+                        val pageNumber = pageNumberMatch.value.toInt()
+                        val newFileName =
+                            fileName.replace(pageNumberMatch.value, (pageNumber + 1).toString())
+                        whiteboardViewModel.setFileName("$newFileName.svg")
+                    } else {
+                        whiteboardViewModel.setFileName(
+                            "${
+                                whiteboardViewModel.fileName.value!!.split(
+                                    "."
+                                )[0]
+                            }-1.svg"
+                        )
+                    }
+                }
             }
         }
 
         val buttonLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(previousPageButton, 0)
-            addView(nextPageButton, 0)
-            addView(clearButton, 0)
+            addView(nextPageButton, 1)
+            // addView(clearButton, 0)
         }
 
         // Add to a layout
