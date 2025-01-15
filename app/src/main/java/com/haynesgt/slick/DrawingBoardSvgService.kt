@@ -78,7 +78,7 @@ class DrawingBoardSvgService(private val mainActivity: MainActivity) {
             writer.write("<svg xmlns=\"http://www.w3.org/2000/svg\">\n")
             for (stroke in strokes) {
                 val points = stroke.points
-                writer.write("  <path d=\"M${points[0].x},${points[0].y}")
+                writer.write("  <path style=\"fill:none;stroke:black;stroke-width:0.2\" d=\"M${points[0].x},${points[0].y}")
                 for (point in points) {
                     writer.write(" L${point.x},${point.y}")
                 }
