@@ -1,9 +1,9 @@
 [versions]
-agp = "8.7.3"
+agp = "8.13.2"
 androidsvg = "1.4"
 googleApiClientAndroid = "1.34.0"
 googleApiServicesDrive = "v3-rev197-1.25.0"
-kotlin = "2.0.0"
+kotlin = "2.1.0"
 coreKtx = "1.10.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
