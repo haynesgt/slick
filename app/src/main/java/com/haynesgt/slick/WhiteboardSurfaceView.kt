@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
 import android.os.Build
 import android.util.AttributeSet
 import android.view.GestureDetector
@@ -29,23 +30,25 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
 
     private lateinit var viewModel: WhiteboardViewModel
 
-    private val renderer: CanvasFrontBufferedRenderer<Pair<Vector2D, Vector2D>> = CanvasFrontBufferedRenderer(
+    private val renderer: CanvasFrontBufferedRenderer<List<Vector2D>> = CanvasFrontBufferedRenderer(
         this,
-        object : CanvasFrontBufferedRenderer.Callback<Pair<Vector2D, Vector2D>> {
+        object : CanvasFrontBufferedRenderer.Callback<List<Vector2D>> {
             override fun onDrawFrontBufferedLayer(
                 canvas: Canvas,
                 bufferWidth: Int,
                 bufferHeight: Int,
-                param: Pair<Vector2D, Vector2D>
+                param: List<Vector2D>
             ) {
-                canvas.drawLine(param.first.x, param.first.y, param.second.x, param.second.y, paint)
+                // Clear the front buffer to prevent artifacts (jagged lines) from previous segments
+                canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                drawSingleStroke(canvas, param)
             }
 
             override fun onDrawMultiBufferedLayer(
                 canvas: Canvas,
                 bufferWidth: Int,
                 bufferHeight: Int,
-                params: Collection<Pair<Vector2D, Vector2D>>
+                params: Collection<List<Vector2D>>
             ) {
                 val strokes = viewModel.strokes.value
                 if (strokes != null) {
@@ -64,7 +67,8 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         this.viewModel = viewModel
         viewModel.currentStroke.observe(owner) { stroke ->
             if (stroke != null) {
-                drawLastLineOfCurrentStroke(stroke.points)
+                // Render the entire current stroke to the front buffer for real-time smoothing
+                this.renderer.renderFrontBufferedLayer(stroke.points)
             }
         }
         viewModel.strokes.observe(owner) { strokes ->
@@ -143,41 +147,38 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         return true
     }
 
-    private fun drawLastLineOfCurrentStroke(points: List<Vector2D>) {
-        if (points.size < 2) {
-            return
-        }
-        this.renderer.renderFrontBufferedLayer(Pair(points[points.size - 2], points[points.size - 1]))
-    }
-
     private fun drawStrokes(canvas: Canvas, strokes: List<Stroke>) {
         canvas.drawColor(Color.rgb(49, 49, 49))
         for (stroke in strokes) {
-            if (stroke.points.size < 2) {
-                continue
-            }
-            val path = Path()
-            path.moveTo(stroke.points[0].x, stroke.points[0].y)
-            
-            for (i in 1 until stroke.points.size) {
-                val p1 = stroke.points[i - 1]
-                val p2 = stroke.points[i]
-                
-                // Use a quadratic Bezier curve for smoothing between midpoints
-                val midX = (p1.x + p2.x) / 2
-                val midY = (p1.y + p2.y) / 2
-                
-                if (i == 1) {
-                    path.lineTo(midX, midY)
-                } else {
-                    path.quadTo(p1.x, p1.y, midX, midY)
-                }
-            }
-            
-            // Connect to the final point
-            path.lineTo(stroke.points.last().x, stroke.points.last().y)
-
-            canvas.drawPath(path, paint)
+            drawSingleStroke(canvas, stroke.points)
         }
+    }
+
+    private fun drawSingleStroke(canvas: Canvas, points: List<Vector2D>) {
+        if (points.size < 2) {
+            return
+        }
+        val path = Path()
+        path.moveTo(points[0].x, points[0].y)
+
+        for (i in 1 until points.size) {
+            val p1 = points[i - 1]
+            val p2 = points[i]
+
+            // Use a quadratic Bezier curve for smoothing between midpoints
+            val midX = (p1.x + p2.x) / 2
+            val midY = (p1.y + p2.y) / 2
+
+            if (i == 1) {
+                path.lineTo(midX, midY)
+            } else {
+                path.quadTo(p1.x, p1.y, midX, midY)
+            }
+        }
+
+        // Connect to the final point
+        path.lineTo(points.last().x, points.last().y)
+
+        canvas.drawPath(path, paint)
     }
 }
