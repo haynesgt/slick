@@ -7,15 +7,19 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PorterDuff
+import android.graphics.Matrix
 import android.os.Build
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.annotation.RequiresApi
 import androidx.graphics.lowlatency.CanvasFrontBufferedRenderer
 import androidx.lifecycle.LifecycleOwner
+import kotlin.math.max
+import kotlin.math.min
 
 @RequiresApi(Build.VERSION_CODES.Q)
 class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : SurfaceView(context, attrs),
@@ -30,6 +34,13 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
 
     private lateinit var viewModel: WhiteboardViewModel
 
+    private var scaleFactor = 1f
+    private var offsetX = 0f
+    private var offsetY = 0f
+
+    private val drawMatrix = Matrix()
+    private val inverseMatrix = Matrix()
+
     private val renderer: CanvasFrontBufferedRenderer<List<Vector2D>> = CanvasFrontBufferedRenderer(
         this,
         object : CanvasFrontBufferedRenderer.Callback<List<Vector2D>> {
@@ -41,7 +52,10 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             ) {
                 // Clear the front buffer to prevent artifacts (jagged lines) from previous segments
                 canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                canvas.save()
+                canvas.concat(drawMatrix)
                 drawSingleStroke(canvas, param)
+                canvas.restore()
             }
 
             override fun onDrawMultiBufferedLayer(
@@ -98,19 +112,77 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             onTapped?.invoke()
             return true
         }
+
+        override fun onScroll(
+            e1: MotionEvent?,
+            e2: MotionEvent,
+            distanceX: Float,
+            distanceY: Float
+        ): Boolean {
+            if (e2.pointerCount > 1 || e2.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
+                offsetX -= distanceX
+                offsetY -= distanceY
+                updateMatrices()
+                if (holder.surface.isValid) {
+                    renderer.commit()
+                }
+                return true
+            }
+            return false
+        }
     })
+
+    private val scaleGestureDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            scaleFactor *= detector.scaleFactor
+            scaleFactor = max(0.1f, min(scaleFactor, 10.0f))
+
+            // Zoom around the pivot point
+            val focusX = detector.focusX
+            val focusY = detector.focusY
+            
+            offsetX -= (focusX - offsetX) * (detector.scaleFactor - 1)
+            offsetY -= (focusY - offsetY) * (detector.scaleFactor - 1)
+
+            updateMatrices()
+            if (holder.surface.isValid) {
+                renderer.commit()
+            }
+            return true
+        }
+    })
+
+    private fun updateMatrices() {
+        drawMatrix.reset()
+        drawMatrix.postScale(scaleFactor, scaleFactor)
+        drawMatrix.postTranslate(offsetX, offsetY)
+        
+        drawMatrix.invert(inverseMatrix)
+    }
+
+    private fun screenToCanvas(x: Float, y: Float): Vector2D {
+        val pts = floatArrayOf(x, y)
+        inverseMatrix.mapPoints(pts)
+        return Vector2D(pts[0], pts[1])
+    }
 
     init {
         holder?.addCallback(this)
+        updateMatrices()
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        //TODO("Not yet implemented")
-        // draw gray
+        // draw background
+        redrawAll()
+    }
+
+    private fun redrawAll() {
         var canvas: Canvas? = null
         try {
             canvas = holder.lockCanvas()
-            canvas.drawColor(Color.rgb(49, 49, 49))
+            if (canvas != null) {
+                drawStrokes(canvas, viewModel.strokes.value ?: emptyList())
+            }
         } finally {
             if (canvas != null) {
                 holder.unlockCanvasAndPost(canvas)
@@ -128,30 +200,42 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        scaleGestureDetector.onTouchEvent(event)
         if (gestureDetector.onTouchEvent(event)) { return true }
-        // ignore non-stylus events
-        if (event.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
+        
+        // stylus events for drawing
+        if (event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
+            val canvasPoint = screenToCanvas(event.x, event.y)
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    onPenDown?.invoke(canvasPoint)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    onPenMove?.invoke(canvasPoint)
+                }
+                MotionEvent.ACTION_UP -> {
+                    onPenUp?.invoke(canvasPoint)
+                }
+            }
             return true
-        }
-        when (event.action) {
-            MotionEvent.ACTION_DOWN -> {
-                onPenDown?.invoke(Vector2D(event.x, event.y))
-            }
-            MotionEvent.ACTION_MOVE -> {
-                onPenMove?.invoke(Vector2D(event.x, event.y))
-            }
-            MotionEvent.ACTION_UP -> {
-                onPenUp?.invoke(Vector2D(event.x, event.y))
-            }
         }
         return true
     }
 
     private fun drawStrokes(canvas: Canvas, strokes: List<Stroke>) {
         canvas.drawColor(Color.rgb(49, 49, 49))
+        canvas.save()
+        canvas.concat(drawMatrix)
         for (stroke in strokes) {
             drawSingleStroke(canvas, stroke.points)
         }
+        // Also draw the active stroke if it exists, so it stays visible during zoom/pan
+        if (::viewModel.isInitialized) {
+            viewModel.currentStroke.value?.let { current ->
+                drawSingleStroke(canvas, current.points)
+            }
+        }
+        canvas.restore()
     }
 
     private fun drawSingleStroke(canvas: Canvas, points: List<Vector2D>) {
