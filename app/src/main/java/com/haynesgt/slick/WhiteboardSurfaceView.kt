@@ -134,15 +134,19 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
 
     private val scaleGestureDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
+            val oldScale = scaleFactor
             scaleFactor *= detector.scaleFactor
             scaleFactor = max(0.1f, min(scaleFactor, 10.0f))
+
+            // Calculate the actual ratio used after clamping to prevent "jumping" at limits
+            val actualRatio = scaleFactor / oldScale
 
             // Zoom around the pivot point
             val focusX = detector.focusX
             val focusY = detector.focusY
             
-            offsetX -= (focusX - offsetX) * (detector.scaleFactor - 1)
-            offsetY -= (focusY - offsetY) * (detector.scaleFactor - 1)
+            offsetX -= (focusX - offsetX) * (actualRatio - 1)
+            offsetY -= (focusY - offsetY) * (actualRatio - 1)
 
             updateMatrices()
             if (holder.surface.isValid) {
