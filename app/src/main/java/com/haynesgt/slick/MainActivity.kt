@@ -63,7 +63,9 @@ class MainActivity : AppCompatActivity() {
         }
         whiteboardView.onPenUp = { point ->
             whiteboardViewModel.completeCurrentStrokeAt(point)
-            drawingBoardSvgService.saveStrokesToFile(whiteboardViewModel.fileName.value!!, whiteboardViewModel.strokes.value!!)
+            Thread {
+                drawingBoardSvgService.saveStrokesToFile(whiteboardViewModel.fileName.value!!, whiteboardViewModel.strokes.value!!)
+            }.start()
         }
 
         window.decorView.systemUiVisibility = (
