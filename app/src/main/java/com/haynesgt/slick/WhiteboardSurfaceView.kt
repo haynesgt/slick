@@ -158,9 +158,25 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             }
             val path = Path()
             path.moveTo(stroke.points[0].x, stroke.points[0].y)
-            for (point in stroke.points) {
-                path.lineTo(point.x, point.y)
+            
+            for (i in 1 until stroke.points.size) {
+                val p1 = stroke.points[i - 1]
+                val p2 = stroke.points[i]
+                
+                // Use a quadratic Bezier curve for smoothing between midpoints
+                val midX = (p1.x + p2.x) / 2
+                val midY = (p1.y + p2.y) / 2
+                
+                if (i == 1) {
+                    path.lineTo(midX, midY)
+                } else {
+                    path.quadTo(p1.x, p1.y, midX, midY)
+                }
             }
+            
+            // Connect to the final point
+            path.lineTo(stroke.points.last().x, stroke.points.last().y)
+
             canvas.drawPath(path, paint)
         }
     }
