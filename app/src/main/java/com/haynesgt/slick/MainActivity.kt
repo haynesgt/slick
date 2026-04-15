@@ -53,6 +53,21 @@ class MainActivity : AppCompatActivity() {
 
         whiteboardViewModel.setFileName(sharedPreferences.getString("current_file", "test.svg")!!)
 
+        // Load and persist settings
+        whiteboardViewModel.setSingleFingerPanEnabled(sharedPreferences.getBoolean("single_finger_pan", true))
+        whiteboardViewModel.setInvertColors(sharedPreferences.getBoolean("invert_colors", false))
+        whiteboardViewModel.setControlsLocked(sharedPreferences.getBoolean("controls_locked", false))
+
+        whiteboardViewModel.singleFingerPanEnabled.observe(this) { enabled ->
+            sharedPreferences.edit().putBoolean("single_finger_pan", enabled).apply()
+        }
+        whiteboardViewModel.invertColors.observe(this) { inverted ->
+            sharedPreferences.edit().putBoolean("invert_colors", inverted).apply()
+        }
+        whiteboardViewModel.controlsLocked.observe(this) { locked ->
+            sharedPreferences.edit().putBoolean("controls_locked", locked).apply()
+        }
+
         whiteboardView.onTapped = {
             // No longer needed for hiding since we use onDown
         }
