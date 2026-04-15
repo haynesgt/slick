@@ -25,11 +25,63 @@ class DrawingBoardSvgService(private val context: Context) {
 
     fun listSvgFiles(): List<String> {
         val folder = File(context.filesDir, folderName)
+        if (!folder.exists()) return emptyList()
         return folder.listFiles()
             ?.filter { it.isFile && it.extension == "svg" }
             ?.map { it.name }
             ?.sortedDescending()
             ?: emptyList()
+    }
+
+    fun deleteFile(fileName: String): Boolean = synchronized(fileLock) {
+        val folder = File(context.filesDir, folderName)
+        val file = File(folder, fileName)
+        return if (file.exists()) file.delete() else false
+    }
+
+    fun renameFile(oldName: String, newName: String): Boolean = synchronized(fileLock) {
+        val folder = File(context.filesDir, folderName)
+        val oldFile = File(folder, oldName)
+        val newFile = File(folder, if (newName.endsWith(".svg")) newName else "$newName.svg")
+        return if (oldFile.exists() && !newFile.exists()) {
+            oldFile.renameTo(newFile)
+        } else {
+            false
+        }
+    }
+
+    fun importFile(uri: android.net.Uri): String? = synchronized(fileLock) {
+        val folder = File(context.filesDir, folderName)
+        if (!folder.exists()) folder.mkdirs()
+
+        val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.svg"
+        val targetFile = File(folder, fileName)
+
+        try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                targetFile.outputStream().use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+            return fileName
+        } catch (e: Exception) {
+            Log.e("Slick", "Error importing file from $uri", e)
+            return null
+        }
+    }
+
+    private fun getFileNameFromUri(uri: android.net.Uri): String? {
+        var name: String? = null
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val index = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (index != -1) {
+                    name = it.getString(index)
+                }
+            }
+        }
+        return name
     }
 
     fun loadStrokesFromFile(fileName: String): Pair<List<Stroke>, ViewPort> = synchronized(fileLock) {

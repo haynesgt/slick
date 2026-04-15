@@ -18,10 +18,30 @@ import androidx.core.content.edit
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
+import android.widget.EditText
+import android.widget.Toast
 
 @RequiresApi(Build.VERSION_CODES.Q)
 class MainActivity : AppCompatActivity() {
     private lateinit var whiteboardViewModel: WhiteboardViewModel
+    private lateinit var drawingBoardSvgService: DrawingBoardSvgService
+
+    private val importLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            val importedFileName = drawingBoardSvgService.importFile(it)
+            if (importedFileName != null) {
+                whiteboardViewModel.setFileName(importedFileName)
+                val (strokes, viewPort) = drawingBoardSvgService.loadStrokesFromFile(importedFileName)
+                whiteboardViewModel.setStrokes(strokes)
+                whiteboardViewModel.setViewPort(viewPort)
+                Toast.makeText(this, "Imported $importedFileName", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Failed to import file", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,7 +57,7 @@ class MainActivity : AppCompatActivity() {
         val whiteboardView = WhiteboardSurfaceView(this)
 
         val sendThingsService = SendThingsService()
-        val drawingBoardSvgService = DrawingBoardSvgService(this)
+        drawingBoardSvgService = DrawingBoardSvgService(this)
 
         var isInitialLoading = false
 
@@ -129,23 +149,21 @@ class MainActivity : AppCompatActivity() {
                 val files = drawingBoardSvgService.listSvgFiles()
                 val popup = PopupMenu(this@MainActivity, this)
                 
-                // Add "New" as a special entry at the top
                 popup.menu.add(Menu.NONE, 0, 0, "New Document")
+                popup.menu.add(Menu.NONE, 1, 1, "Import SVG")
                 
                 files.forEachIndexed { index, fileName ->
-                    // Offset index by 1 because 0 is "New Document"
-                    popup.menu.add(Menu.NONE, index + 1, index + 1, fileName)
+                    popup.menu.add(Menu.NONE, index + 2, index + 2, fileName)
                 }
                 
                 popup.setOnMenuItemClickListener { item ->
-                    if (item.itemId == 0) {
-                        whiteboardViewModel.createNewDocument()
-                    } else {
-                        val fileName = item.title.toString()
-                        whiteboardViewModel.setFileName(fileName)
-                        val (strokes, viewPort) = drawingBoardSvgService.loadStrokesFromFile(fileName)
-                        whiteboardViewModel.setStrokes(strokes)
-                        whiteboardViewModel.setViewPort(viewPort)
+                    when (item.itemId) {
+                        0 -> whiteboardViewModel.createNewDocument()
+                        1 -> importLauncher.launch("image/svg+xml")
+                        else -> {
+                            val fileName = item.title.toString()
+                            showDocumentOptions(fileName)
+                        }
                     }
                     true
                 }
@@ -235,5 +253,57 @@ class MainActivity : AppCompatActivity() {
             controller.hide(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+    }
+
+    private fun showDocumentOptions(fileName: String) {
+        val options = arrayOf("Open", "Rename", "Archive (Delete)")
+        AlertDialog.Builder(this)
+            .setTitle(fileName)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> { // Open
+                        whiteboardViewModel.setFileName(fileName)
+                        val (strokes, viewPort) = drawingBoardSvgService.loadStrokesFromFile(fileName)
+                        whiteboardViewModel.setStrokes(strokes)
+                        whiteboardViewModel.setViewPort(viewPort)
+                    }
+                    1 -> { // Rename
+                        showRenameDialog(fileName)
+                    }
+                    2 -> { // Delete
+                        if (drawingBoardSvgService.deleteFile(fileName)) {
+                            if (whiteboardViewModel.fileName.value == fileName) {
+                                whiteboardViewModel.createNewDocument()
+                            }
+                            Toast.makeText(this, "Deleted $fileName", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showRenameDialog(oldName: String) {
+        val input = EditText(this).apply {
+            setText(oldName)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Rename Document")
+            .setView(input)
+            .setPositiveButton("Rename") { _, _ ->
+                val newName = input.text.toString()
+                if (newName.isNotBlank() && newName != oldName) {
+                    if (drawingBoardSvgService.renameFile(oldName, newName)) {
+                        if (whiteboardViewModel.fileName.value == oldName) {
+                            whiteboardViewModel.setFileName(newName)
+                        }
+                        Toast.makeText(this, "Renamed to $newName", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "Failed to rename", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 }
