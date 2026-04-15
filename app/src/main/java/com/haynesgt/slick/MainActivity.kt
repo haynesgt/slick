@@ -4,11 +4,11 @@ import android.annotation.SuppressLint
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.Gravity
 import android.view.Menu
 import android.view.View
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.LinearLayout
+import android.view.ViewGroup
+import android.widget.*
 import androidx.appcompat.widget.PopupMenu
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
@@ -20,13 +20,25 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
-import android.widget.EditText
-import android.widget.Toast
+import android.graphics.Color
+import android.graphics.Typeface
 
 @RequiresApi(Build.VERSION_CODES.Q)
 class MainActivity : AppCompatActivity() {
     private lateinit var whiteboardViewModel: WhiteboardViewModel
     private lateinit var drawingBoardSvgService: DrawingBoardSvgService
+    private lateinit var fileNameTextView: TextView
+
+    private fun abbreviateFileName(name: String): String {
+        val cleanName = name.removeSuffix(".svg")
+        return if (cleanName.length > 30) {
+            val firstPart = cleanName.substring(0, 14)
+            val lastPart = cleanName.substring(cleanName.length - 13)
+            "$firstPart...$lastPart"
+        } else {
+            cleanName
+        }
+    }
 
     private val importLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
@@ -47,15 +59,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // load shared preferences
         val sharedPreferences = getSharedPreferences("app_prefs", MODE_PRIVATE)
-        if (sharedPreferences.getBoolean("first_run", true)) {
-            // do something the first time the app is launched
-            sharedPreferences.edit { putBoolean("first_run", false) }
-        }
-
         val whiteboardView = WhiteboardSurfaceView(this)
-
         val sendThingsService = SendThingsService()
         drawingBoardSvgService = DrawingBoardSvgService(this)
 
@@ -64,6 +69,9 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel = ViewModelProvider(this)[WhiteboardViewModel::class.java]
         whiteboardViewModel.fileName.observe(this) { fileName ->
             sharedPreferences.edit { putString("current_file", fileName) }
+            if (::fileNameTextView.isInitialized) {
+                fileNameTextView.text = abbreviateFileName(fileName)
+            }
             isInitialLoading = true
             try {
                 val (strokes, viewPort) = drawingBoardSvgService.loadStrokesFromFile(fileName)
@@ -104,7 +112,6 @@ class MainActivity : AppCompatActivity() {
             whiteboardViewModel.setFileName(savedFile)
         }
 
-        // Load and persist settings
         whiteboardViewModel.setSingleFingerPanEnabled(sharedPreferences.getBoolean("single_finger_pan", true))
         whiteboardViewModel.setInvertColors(sharedPreferences.getBoolean("invert_colors", false))
         whiteboardViewModel.setControlsLocked(sharedPreferences.getBoolean("controls_locked", false))
@@ -119,9 +126,6 @@ class MainActivity : AppCompatActivity() {
             sharedPreferences.edit { putBoolean("controls_locked", locked) }
         }
 
-        whiteboardView.onTapped = {
-            // No longer needed for hiding since we use onDown
-        }
         whiteboardView.onDown = {
             if (whiteboardViewModel.controlsLocked.value != true) {
                 whiteboardViewModel.setControlsVisibility(false)
@@ -146,28 +150,7 @@ class MainActivity : AppCompatActivity() {
         val documentsButton = Button(this).apply {
             text = "Documents"
             setOnClickListener {
-                val files = drawingBoardSvgService.listSvgFiles()
-                val popup = PopupMenu(this@MainActivity, this)
-                
-                popup.menu.add(Menu.NONE, 0, 0, "New Document")
-                popup.menu.add(Menu.NONE, 1, 1, "Import SVG")
-                
-                files.forEachIndexed { index, fileName ->
-                    popup.menu.add(Menu.NONE, index + 2, index + 2, fileName)
-                }
-                
-                popup.setOnMenuItemClickListener { item ->
-                    when (item.itemId) {
-                        0 -> whiteboardViewModel.createNewDocument()
-                        1 -> importLauncher.launch("image/svg+xml")
-                        else -> {
-                            val fileName = item.title.toString()
-                            showDocumentOptions(fileName)
-                        }
-                    }
-                    true
-                }
-                popup.show()
+                showDocumentsDialog()
             }
         }
 
@@ -189,18 +172,9 @@ class MainActivity : AppCompatActivity() {
                 }
                 popup.setOnMenuItemClickListener { item ->
                     when (item) {
-                        panItem -> {
-                            val newValue = !item.isChecked
-                            whiteboardViewModel.setSingleFingerPanEnabled(newValue)
-                        }
-                        invertItem -> {
-                            val newValue = !item.isChecked
-                            whiteboardViewModel.setInvertColors(newValue)
-                        }
-                        lockItem -> {
-                            val newValue = !item.isChecked
-                            whiteboardViewModel.setControlsLocked(newValue)
-                        }
+                        panItem -> whiteboardViewModel.setSingleFingerPanEnabled(!item.isChecked)
+                        invertItem -> whiteboardViewModel.setInvertColors(!item.isChecked)
+                        lockItem -> whiteboardViewModel.setControlsLocked(!item.isChecked)
                     }
                     true
                 }
@@ -226,28 +200,42 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        fileNameTextView = TextView(this).apply {
+            setPadding(16, 0, 16, 0)
+            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(Color.WHITE)
+            setTypeface(null, Typeface.BOLD)
+            text = whiteboardViewModel.fileName.value?.let { abbreviateFileName(it) }
+        }
+
         val buttonLayout = LinearLayout(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                setMargins(16, 16, 16, 16)
+            }
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             addView(documentsButton)
+            addView(fileNameTextView)
             addView(sendButton)
             addView(optionsButton)
             addView(closeButton)
         }
 
-        // Add to a layout
         val layout = FrameLayout(this).apply {
             addView(whiteboardView)
             addView(buttonLayout)
         }
 
         whiteboardViewModel.controlsVisible.observe(this) { controlsVisible ->
-            buttonLayout.visibility =
-                if (controlsVisible) View.VISIBLE else View.GONE
+            buttonLayout.visibility = if (controlsVisible) View.VISIBLE else View.GONE
         }
 
         setContentView(layout)
 
-        // Hide system bars for immersive mode
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, layout).let { controller ->
             controller.hide(WindowInsetsCompat.Type.systemBars())
@@ -255,51 +243,199 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showDocumentOptions(fileName: String) {
-        val options = arrayOf("Open", "Rename", "Archive (Delete)")
-        AlertDialog.Builder(this)
-            .setTitle(fileName)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> { // Open
+    private fun showDocumentsDialog() {
+        val dialogView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 32, 32, 32)
+        }
+
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+            addView(dialogView)
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(scroll)
+            
+            val bottomBar = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                addView(Button(this@MainActivity).apply {
+                    text = "New"
+                    setOnClickListener {
+                        whiteboardViewModel.createNewDocument()
+                        currentDialog?.dismiss()
+                    }
+                })
+                addView(Button(this@MainActivity).apply {
+                    text = "Import"
+                    setOnClickListener {
+                        importLauncher.launch("image/svg+xml")
+                        currentDialog?.dismiss()
+                    }
+                })
+                addView(Button(this@MainActivity).apply {
+                    text = "📦 Archive"
+                    setOnClickListener {
+                        val d = currentDialog
+                        showArchiveDialog()
+                        d?.dismiss()
+                    }
+                })
+            }
+            addView(bottomBar)
+        }
+
+        val currentFile = whiteboardViewModel.fileName.value
+        val files = drawingBoardSvgService.listSvgFiles()
+        files.forEach { fileName ->
+            val isCurrent = fileName == currentFile
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(16, 8, 16, 8)
+                if (isCurrent) {
+                    setBackgroundColor(Color.argb(40, 0, 0, 0)) // Soft highlight
+                }
+
+                val nameText = TextView(this@MainActivity).apply {
+                    text = fileName.removeSuffix(".svg")
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    textSize = 18f
+                    if (isCurrent) {
+                        setTypeface(null, Typeface.BOLD)
+                    }
+                    setOnClickListener {
                         whiteboardViewModel.setFileName(fileName)
-                        val (strokes, viewPort) = drawingBoardSvgService.loadStrokesFromFile(fileName)
-                        whiteboardViewModel.setStrokes(strokes)
-                        whiteboardViewModel.setViewPort(viewPort)
+                        currentDialog?.dismiss()
                     }
-                    1 -> { // Rename
-                        showRenameDialog(fileName)
-                    }
-                    2 -> { // Delete
-                        if (drawingBoardSvgService.deleteFile(fileName)) {
+                }
+                addView(nameText)
+
+                addView(Button(this@MainActivity).apply {
+                    text = "✏️"
+                    layoutParams = LinearLayout.LayoutParams(120, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    setOnClickListener { showRenameDialog(fileName) }
+                })
+                addView(Button(this@MainActivity).apply {
+                    text = "📦"
+                    layoutParams = LinearLayout.LayoutParams(120, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    setOnClickListener {
+                        if (drawingBoardSvgService.archiveFile(fileName)) {
                             if (whiteboardViewModel.fileName.value == fileName) {
                                 whiteboardViewModel.createNewDocument()
                             }
-                            Toast.makeText(this, "Deleted $fileName", Toast.LENGTH_SHORT).show()
+                            currentDialog?.dismiss()
+                            showDocumentsDialog()
+                        } else {
+                            Toast.makeText(this@MainActivity, "Failed to archive", Toast.LENGTH_SHORT).show()
                         }
                     }
-                }
+                })
             }
+            dialogView.addView(row)
+        }
+
+        currentDialog = AlertDialog.Builder(this)
+            .setTitle("Documents")
+            .setView(container)
+            .setNegativeButton("Close", null)
             .show()
     }
 
-    private fun showRenameDialog(oldName: String) {
+    private fun showArchiveDialog() {
+        val dialogView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 32, 32, 32)
+        }
+
+        val scroll = ScrollView(this).apply {
+            addView(dialogView)
+        }
+
+        val files = drawingBoardSvgService.listArchivedFiles()
+        if (files.isEmpty()) {
+            dialogView.addView(TextView(this).apply { text = "No archived documents" })
+        }
+
+        files.forEach { fileName ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 8, 0, 8)
+
+                val nameText = TextView(this@MainActivity).apply {
+                    text = fileName.removeSuffix(".svg")
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    textSize = 16f
+                    setTextColor(Color.GRAY)
+                }
+                addView(nameText)
+
+                addView(Button(this@MainActivity).apply {
+                    text = "Restore"
+                    setOnClickListener {
+                        if (drawingBoardSvgService.restoreFile(fileName)) {
+                            currentDialog?.dismiss()
+                            showDocumentsDialog()
+                        }
+                    }
+                })
+                addView(Button(this@MainActivity).apply {
+                    text = "🗑️"
+                    setOnClickListener {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setMessage("Delete $fileName permanently?")
+                            .setPositiveButton("Delete") { _, _ ->
+                                if (drawingBoardSvgService.deleteFile(fileName, fromArchive = true)) {
+                                    currentDialog?.dismiss()
+                                    showArchiveDialog()
+                                }
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                })
+            }
+            dialogView.addView(row)
+        }
+
+        currentDialog = AlertDialog.Builder(this)
+            .setTitle("Archived Documents")
+            .setView(scroll)
+            .setPositiveButton("Back") { _, _ -> showDocumentsDialog() }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private var currentDialog: AlertDialog? = null
+
+    private fun showRenameDialog(oldName: String, inArchive: Boolean = false) {
+        val cleanName = oldName.removeSuffix(".svg")
         val input = EditText(this).apply {
-            setText(oldName)
+            setText(cleanName)
+            setSelection(cleanName.length)
         }
         AlertDialog.Builder(this)
             .setTitle("Rename Document")
             .setView(input)
             .setPositiveButton("Rename") { _, _ ->
                 val newName = input.text.toString()
-                if (newName.isNotBlank() && newName != oldName) {
-                    if (drawingBoardSvgService.renameFile(oldName, newName)) {
-                        if (whiteboardViewModel.fileName.value == oldName) {
-                            whiteboardViewModel.setFileName(newName)
+                if (newName.isNotBlank() && newName != cleanName) {
+                    if (drawingBoardSvgService.renameFile(oldName, newName, inArchive)) {
+                        val finalName = if (newName.endsWith(".svg")) newName else "$newName.svg"
+                        if (whiteboardViewModel.fileName.value == oldName && !inArchive) {
+                            whiteboardViewModel.setFileName(finalName)
                         }
-                        Toast.makeText(this, "Renamed to $newName", Toast.LENGTH_SHORT).show()
+                        currentDialog?.dismiss()
+                        if (inArchive) showArchiveDialog() else showDocumentsDialog()
                     } else {
-                        Toast.makeText(this, "Failed to rename", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "Failed to rename", Toast.LENGTH_SHORT).show()
                     }
                 }
             }

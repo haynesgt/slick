@@ -18,6 +18,7 @@ data class Stroke(
 class DrawingBoardSvgService(private val context: Context) {
 
     private val folderName = "drawings"
+    private val archiveFolderName = "archived"
 
     companion object {
         private val fileLock = Any()
@@ -33,14 +34,52 @@ class DrawingBoardSvgService(private val context: Context) {
             ?: emptyList()
     }
 
-    fun deleteFile(fileName: String): Boolean = synchronized(fileLock) {
+    fun listArchivedFiles(): List<String> {
+        val folder = File(context.filesDir, archiveFolderName)
+        if (!folder.exists()) return emptyList()
+        return folder.listFiles()
+            ?.filter { it.isFile && it.extension == "svg" }
+            ?.map { it.name }
+            ?.sortedDescending()
+            ?: emptyList()
+    }
+
+    fun archiveFile(fileName: String): Boolean = synchronized(fileLock) {
         val folder = File(context.filesDir, folderName)
+        val archiveFolder = File(context.filesDir, archiveFolderName)
+        if (!archiveFolder.exists()) archiveFolder.mkdirs()
+
+        val file = File(folder, fileName)
+        val archiveFile = File(archiveFolder, fileName)
+        return if (file.exists()) {
+            file.renameTo(archiveFile)
+        } else {
+            false
+        }
+    }
+
+    fun restoreFile(fileName: String): Boolean = synchronized(fileLock) {
+        val folder = File(context.filesDir, folderName)
+        val archiveFolder = File(context.filesDir, archiveFolderName)
+        if (!folder.exists()) folder.mkdirs()
+
+        val file = File(folder, fileName)
+        val archiveFile = File(archiveFolder, fileName)
+        return if (archiveFile.exists()) {
+            archiveFile.renameTo(file)
+        } else {
+            false
+        }
+    }
+
+    fun deleteFile(fileName: String, fromArchive: Boolean = false): Boolean = synchronized(fileLock) {
+        val folder = File(context.filesDir, if (fromArchive) archiveFolderName else folderName)
         val file = File(folder, fileName)
         return if (file.exists()) file.delete() else false
     }
 
-    fun renameFile(oldName: String, newName: String): Boolean = synchronized(fileLock) {
-        val folder = File(context.filesDir, folderName)
+    fun renameFile(oldName: String, newName: String, inArchive: Boolean = false): Boolean = synchronized(fileLock) {
+        val folder = File(context.filesDir, if (inArchive) archiveFolderName else folderName)
         val oldFile = File(folder, oldName)
         val newFile = File(folder, if (newName.endsWith(".svg")) newName else "$newName.svg")
         return if (oldFile.exists() && !newFile.exists()) {
@@ -84,8 +123,8 @@ class DrawingBoardSvgService(private val context: Context) {
         return name
     }
 
-    fun loadStrokesFromFile(fileName: String): Pair<List<Stroke>, ViewPort> = synchronized(fileLock) {
-        val folder = File(context.filesDir, folderName)
+    fun loadStrokesFromFile(fileName: String, fromArchive: Boolean = false): Pair<List<Stroke>, ViewPort> = synchronized(fileLock) {
+        val folder = File(context.filesDir, if (fromArchive) archiveFolderName else folderName)
         val file = File(folder, fileName)
 
         if (!file.exists()) {
