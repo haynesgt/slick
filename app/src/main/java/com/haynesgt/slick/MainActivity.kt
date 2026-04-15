@@ -23,12 +23,38 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.*
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.Scope
+import com.google.api.services.drive.DriveScopes
 
 @RequiresApi(Build.VERSION_CODES.Q)
 class MainActivity : AppCompatActivity() {
     private lateinit var whiteboardViewModel: WhiteboardViewModel
     private lateinit var drawingBoardSvgService: DrawingBoardSvgService
+    private lateinit var googleDriveSyncService: GoogleDriveSyncService
     private lateinit var fileNameTextView: TextView
+    private lateinit var syncStatusTextView: TextView
+    private var syncJob: Job? = null
+
+    private val googleSignInLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            googleDriveSyncService.reset()
+            Toast.makeText(this, "Signed in to Google Drive", Toast.LENGTH_SHORT).show()
+            googleDriveSyncService.downloadMissingFiles(File(filesDir, "drawings")) {
+                runOnUiThread {
+                    Toast.makeText(this, "Downloaded missing files from Drive", Toast.LENGTH_SHORT).show()
+                    if (currentDialog?.isShowing == true) {
+                        currentDialog?.dismiss()
+                        showDocumentsDialog()
+                    }
+                }
+            }
+        }
+    }
 
     private fun abbreviateFileName(name: String): String {
         val cleanName = name.removeSuffix(".svg")
@@ -56,6 +82,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun saveAndSyncDebounced() {
+        syncJob?.cancel()
+        syncJob = lifecycleScope.launch(Dispatchers.IO) {
+            delay(2000) // Wait for 2 seconds of inactivity
+            val fileName = whiteboardViewModel.fileName.value ?: return@launch
+            val strokes = whiteboardViewModel.strokes.value ?: emptyList()
+            val viewPort = whiteboardViewModel.viewPort.value ?: ViewPort(1f, 0f, 0f)
+
+            drawingBoardSvgService.saveStrokesToFile(fileName, strokes, viewPort)
+            
+            val file = File(filesDir, "drawings/$fileName")
+            if (file.exists()) {
+                googleDriveSyncService.syncFile(file)
+            }
+        }
+    }
+
     @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,6 +107,13 @@ class MainActivity : AppCompatActivity() {
         val whiteboardView = WhiteboardSurfaceView(this)
         val sendThingsService = SendThingsService()
         drawingBoardSvgService = DrawingBoardSvgService(this)
+        googleDriveSyncService = GoogleDriveSyncService(this)
+
+        googleDriveSyncService.downloadMissingFiles(File(filesDir, "drawings")) {
+            runOnUiThread {
+                Toast.makeText(this, "Downloaded missing files from Drive", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         var isInitialLoading = false
 
@@ -87,24 +137,12 @@ class MainActivity : AppCompatActivity() {
 
         whiteboardViewModel.strokes.observe(this) { strokes ->
             if (isInitialLoading) return@observe
-            Thread {
-                drawingBoardSvgService.saveStrokesToFile(
-                    whiteboardViewModel.fileName.value!!,
-                    strokes,
-                    whiteboardViewModel.viewPort.value ?: ViewPort(1f, 0f, 0f)
-                )
-            }.start()
+            saveAndSyncDebounced()
         }
         
         whiteboardViewModel.viewPort.observe(this) { viewPort ->
             if (isInitialLoading) return@observe
-            Thread {
-                drawingBoardSvgService.saveStrokesToFile(
-                    whiteboardViewModel.fileName.value!!,
-                    whiteboardViewModel.strokes.value ?: emptyList(),
-                    viewPort
-                )
-            }.start()
+            saveAndSyncDebounced()
         }
 
         whiteboardView.bindViewModel(whiteboardViewModel, this)
@@ -125,6 +163,31 @@ class MainActivity : AppCompatActivity() {
         }
         whiteboardViewModel.controlsLocked.observe(this) { locked ->
             sharedPreferences.edit { putBoolean("controls_locked", locked) }
+        }
+
+        syncStatusTextView = TextView(this).apply {
+            setPadding(16, 16, 16, 16)
+            setTextColor(Color.LTGRAY)
+            textSize = 12f
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.END
+            }
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                googleDriveSyncService.syncStatus.collect { status ->
+                    syncStatusTextView.text = when (status) {
+                        SyncStatus.Idle -> ""
+                        SyncStatus.Syncing -> "Syncing..."
+                        SyncStatus.Success -> "Synced"
+                        is SyncStatus.Error -> "Sync failed: ${status.message}"
+                    }
+                }
+            }
         }
 
         whiteboardView.onDown = {
@@ -171,11 +234,20 @@ class MainActivity : AppCompatActivity() {
                     isCheckable = true
                     isChecked = whiteboardViewModel.controlsLocked.value ?: false
                 }
+                val syncItem = popup.menu.add("Sign in to Google Drive")
                 popup.setOnMenuItemClickListener { item ->
                     when (item) {
                         panItem -> whiteboardViewModel.setSingleFingerPanEnabled(!item.isChecked)
                         invertItem -> whiteboardViewModel.setInvertColors(!item.isChecked)
                         lockItem -> whiteboardViewModel.setControlsLocked(!item.isChecked)
+                        syncItem -> {
+                            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                .requestEmail()
+                                .requestScopes(Scope(DriveScopes.DRIVE_FILE))
+                                .build()
+                            val client = GoogleSignIn.getClient(this@MainActivity, gso)
+                            googleSignInLauncher.launch(client.signInIntent)
+                        }
                     }
                     true
                 }
@@ -234,10 +306,13 @@ class MainActivity : AppCompatActivity() {
         val layout = FrameLayout(this).apply {
             addView(whiteboardView)
             addView(toolbarLayout)
+            addView(syncStatusTextView)
         }
 
         whiteboardViewModel.controlsVisible.observe(this) { controlsVisible ->
-            toolbarLayout.visibility = if (controlsVisible) View.VISIBLE else View.GONE
+            val visibility = if (controlsVisible) View.VISIBLE else View.GONE
+            toolbarLayout.visibility = visibility
+            syncStatusTextView.visibility = visibility
         }
 
         setContentView(layout)
@@ -291,6 +366,29 @@ class MainActivity : AppCompatActivity() {
                         val d = currentDialog
                         showArchiveDialog()
                         d?.dismiss()
+                    }
+                })
+                addView(Button(this@MainActivity).apply {
+                    text = "🔄 Sync"
+                    setOnClickListener {
+                        val account = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
+                        val driveScope = Scope(DriveScopes.DRIVE_FILE)
+                        if (account == null || !GoogleSignIn.hasPermissions(account, driveScope)) {
+                            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                .requestEmail()
+                                .requestScopes(driveScope)
+                                .build()
+                            val client = GoogleSignIn.getClient(this@MainActivity, gso)
+                            googleSignInLauncher.launch(client.signInIntent)
+                        } else {
+                            googleDriveSyncService.downloadMissingFiles(File(filesDir, "drawings")) {
+                                runOnUiThread {
+                                    currentDialog?.dismiss()
+                                    showDocumentsDialog()
+                                    Toast.makeText(this@MainActivity, "Sync complete", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
                     }
                 })
             }

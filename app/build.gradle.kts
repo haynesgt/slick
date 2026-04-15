@@ -90,6 +90,7 @@ dependencies {
 
     implementation(libs.play.services.auth) // Google Sign-In
     implementation(libs.google.api.client.android)
+    implementation(libs.google.api.client.gson)
     implementation(libs.google.api.services.drive)
 
 }
