@@ -8,6 +8,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import androidx.appcompat.widget.PopupMenu
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
@@ -133,6 +134,25 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val optionsButton = Button(this).apply {
+            text = "Options"
+            setOnClickListener {
+                val popup = PopupMenu(this@MainActivity, this)
+                val panItem = popup.menu.add("Single Finger Pan").apply {
+                    isCheckable = true
+                    isChecked = whiteboardViewModel.singleFingerPanEnabled.value ?: true
+                }
+                popup.setOnMenuItemClickListener { item ->
+                    if (item == panItem) {
+                        val newValue = !item.isChecked
+                        whiteboardViewModel.setSingleFingerPanEnabled(newValue)
+                    }
+                    true
+                }
+                popup.show()
+            }
+        }
+
         val sendButton = Button(this).apply {
             text = "Send"
             setOnClickListener {
@@ -161,6 +181,7 @@ class MainActivity : AppCompatActivity() {
             addView(previousPageButton, buttonI++)
             addView(nextPageButton, buttonI++)
             addView(sendButton, buttonI++)
+            addView(optionsButton, buttonI++)
             assert(buttonI>1)
             //addView(clearButton, 2)
         }

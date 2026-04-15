@@ -132,7 +132,12 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                     return true
                 }
             }
-            if (e2.pointerCount > 1 || e2.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
+
+            val isSingleFinger = e2.pointerCount == 1
+            val isStylus = e2.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS
+            val canPanWithSingleFinger = viewModel.singleFingerPanEnabled.value ?: true
+
+            if (e2.pointerCount > 1 || (isSingleFinger && !isStylus && canPanWithSingleFinger)) {
                 offsetX -= distanceX
                 offsetY -= distanceY
                 updateMatrices()

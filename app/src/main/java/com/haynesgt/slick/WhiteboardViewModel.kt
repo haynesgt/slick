@@ -21,6 +21,9 @@ class WhiteboardViewModel : ViewModel() {
     private val _fileName: MutableLiveData<String> = MutableLiveData("test.svg")
     val fileName: LiveData<String> get() = _fileName
 
+    private val _singleFingerPanEnabled: MutableLiveData<Boolean> = MutableLiveData(true)
+    val singleFingerPanEnabled: LiveData<Boolean> get() = _singleFingerPanEnabled
+
     private fun addStroke(stroke: Stroke) {
         _strokes.value = _strokes.value?.plus(stroke)
     }
@@ -88,5 +91,9 @@ class WhiteboardViewModel : ViewModel() {
 
     fun setFileName(string: String) {
         _fileName.value = string
+    }
+
+    fun setSingleFingerPanEnabled(enabled: Boolean) {
+        _singleFingerPanEnabled.value = enabled
     }
 }
