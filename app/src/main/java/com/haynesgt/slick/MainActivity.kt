@@ -202,14 +202,23 @@ class MainActivity : AppCompatActivity() {
         }
 
         fileNameTextView = TextView(this).apply {
-            setPadding(16, 0, 16, 0)
-            gravity = Gravity.CENTER_VERTICAL
+            setPadding(8, 8, 8, 8)
             setTextColor(Color.WHITE)
             setTypeface(null, Typeface.BOLD)
+            textSize = 20f
             text = whiteboardViewModel.fileName.value?.let { abbreviateFileName(it) }
         }
 
-        val buttonLayout = LinearLayout(this).apply {
+        val buttonRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(documentsButton)
+            addView(sendButton)
+            addView(optionsButton)
+            addView(closeButton)
+        }
+
+        val toolbarLayout = LinearLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -217,22 +226,18 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.TOP or Gravity.START
                 setMargins(16, 16, 16, 16)
             }
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(documentsButton)
+            orientation = LinearLayout.VERTICAL
             addView(fileNameTextView)
-            addView(sendButton)
-            addView(optionsButton)
-            addView(closeButton)
+            addView(buttonRow)
         }
 
         val layout = FrameLayout(this).apply {
             addView(whiteboardView)
-            addView(buttonLayout)
+            addView(toolbarLayout)
         }
 
         whiteboardViewModel.controlsVisible.observe(this) { controlsVisible ->
-            buttonLayout.visibility = if (controlsVisible) View.VISIBLE else View.GONE
+            toolbarLayout.visibility = if (controlsVisible) View.VISIBLE else View.GONE
         }
 
         setContentView(layout)
