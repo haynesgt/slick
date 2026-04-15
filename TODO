@@ -37,4 +37,31 @@ Other views should exist around the surface, and the drawing surface should alwa
 
 Main Board
 - draw strokes with a pen
+
+# Feature Ideas
+
+## Drawing & Tooling
+- Eraser Modes:
+    - Stroke Eraser: Tapping a stroke deletes the entire thing.
+    - Point Eraser: Erasing just parts of a line (requires path clipping).
+- Pressure Sensitivity: Use the `event.pressure` from the stylus to vary the `strokeWidth` in real-time.
+- Highlighter Tool: A semi-transparent pen mode (using an Alpha channel in HSL) that uses `PorterDuff.Mode.DARKEN` or `MULTIPLY`.
+- Selection / Lasso Tool: Draw a circle around strokes to move, rotate, or recolor them.
+
+## Organization & Workflow
+- Background Templates: Presets like Music Staves, Dot Grid, Cornell Notes, Isometric Grid.
+- Export to PNG/PDF: Render SVG data to Bitmap or `PdfDocument`.
+- Folders or Tagging: Organize documents with tags.
+
+## UI/UX Enhancements
+- Infinite Canvas Toggle: Lock page size to specific aspect ratio (A4, US Letter).
+- Gesture Shortcuts:
+    - Two-finger tap: Undo.
+    - Three-finger tap: Redo.
+- Palm Rejection Settings: "Stylus Only" mode toggle.
+- Mini-Map: Viewport relative to the whole drawing.
+
+## Multimedia
+- Image Annotations: Import photos, place on canvas, and draw over them.
+- Text Boxes: Tap and type, storing text as `<text>` elements in SVG.
 -
