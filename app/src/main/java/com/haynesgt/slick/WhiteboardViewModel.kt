@@ -26,6 +26,9 @@ class WhiteboardViewModel : ViewModel() {
     )
     val fileName: LiveData<String> get() = _fileName
 
+    private val _viewPort: MutableLiveData<ViewPort> = MutableLiveData(ViewPort(1f, 0f, 0f))
+    val viewPort: LiveData<ViewPort> get() = _viewPort
+
     private val _singleFingerPanEnabled: MutableLiveData<Boolean> = MutableLiveData(true)
     val singleFingerPanEnabled: LiveData<Boolean> get() = _singleFingerPanEnabled
 
@@ -102,6 +105,17 @@ class WhiteboardViewModel : ViewModel() {
 
     fun setFileName(string: String) {
         _fileName.value = string
+    }
+
+    fun setViewPort(viewPort: ViewPort) {
+        _viewPort.value = viewPort
+    }
+
+    fun createNewDocument() {
+        val newName = "slick_${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.getDefault()).format(Date())}.svg"
+        _fileName.value = newName
+        _strokes.value = listOf()
+        _viewPort.value = ViewPort(1f, 0f, 0f)
     }
 
     fun setSingleFingerPanEnabled(enabled: Boolean) {

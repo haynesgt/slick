@@ -133,6 +133,15 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                 renderer.commit()
             }
         }
+        viewModel.viewPort.observe(owner) { viewPort ->
+            scaleFactor = viewPort.scale
+            offsetX = viewPort.offsetX
+            offsetY = viewPort.offsetY
+            updateMatrices()
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
         viewModel.lastStrokeCompleteAt.observe(owner) { lastStrokeCompleteAt ->
             if (this.holder.surface.isValid) {
                 renderer.commit()
@@ -189,6 +198,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                 offsetX -= distanceX
                 offsetY -= distanceY
                 updateMatrices()
+                viewModel.setViewPort(ViewPort(scaleFactor, offsetX, offsetY))
                 if (holder.surface.isValid) {
                     renderer.commit()
                 }
@@ -215,6 +225,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             offsetY -= (focusY - offsetY) * (actualRatio - 1)
 
             updateMatrices()
+            viewModel.setViewPort(ViewPort(scaleFactor, offsetX, offsetY))
             if (holder.surface.isValid) {
                 renderer.commit()
             }
