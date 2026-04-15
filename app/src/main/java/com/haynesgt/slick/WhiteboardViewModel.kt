@@ -1,5 +1,6 @@
 package com.haynesgt.slick
 
+import android.graphics.Color
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -37,6 +38,32 @@ class WhiteboardViewModel : ViewModel() {
 
     private val _controlsLocked: MutableLiveData<Boolean> = MutableLiveData(false)
     val controlsLocked: LiveData<Boolean> get() = _controlsLocked
+
+    private val _showGrid: MutableLiveData<Boolean> = MutableLiveData(false)
+    val showGrid: LiveData<Boolean> get() = _showGrid
+
+    private val _showGridHorizontal: MutableLiveData<Boolean> = MutableLiveData(true)
+    val showGridHorizontal: LiveData<Boolean> get() = _showGridHorizontal
+
+    private val _showGridVertical: MutableLiveData<Boolean> = MutableLiveData(false)
+    val showGridVertical: LiveData<Boolean> get() = _showGridVertical
+
+    private val _gridSpacingX: MutableLiveData<Float> = MutableLiveData(50f)
+    val gridSpacingX: LiveData<Float> get() = _gridSpacingX
+
+    val gridSpacing: LiveData<Float> get() = _gridSpacingX
+
+    private val _gridSpacingY: MutableLiveData<Float> = MutableLiveData(50f)
+    val gridSpacingY: LiveData<Float> get() = _gridSpacingY
+
+    private val _gridOffsetX: MutableLiveData<Float> = MutableLiveData(0f)
+    val gridOffsetX: LiveData<Float> get() = _gridOffsetX
+
+    private val _gridOffsetY: MutableLiveData<Float> = MutableLiveData(0f)
+    val gridOffsetY: LiveData<Float> get() = _gridOffsetY
+
+    private val _backgroundColor: MutableLiveData<Int> = MutableLiveData(Color.WHITE)
+    val backgroundColor: LiveData<Int> get() = _backgroundColor
 
     private fun addStroke(stroke: Stroke) {
         _strokes.value = _strokes.value?.plus(stroke)
@@ -131,5 +158,42 @@ class WhiteboardViewModel : ViewModel() {
         if (locked) {
             _controlsVisible.value = true
         }
+    }
+
+    fun setShowGrid(show: Boolean) {
+        _showGrid.value = show
+    }
+
+    fun setShowGridHorizontal(show: Boolean) {
+        _showGridHorizontal.value = show
+    }
+
+    fun setShowGridVertical(show: Boolean) {
+        _showGridVertical.value = show
+    }
+
+    fun setGridSpacingX(spacing: Float) {
+        _gridSpacingX.value = spacing
+    }
+
+    fun setGridSpacingY(spacing: Float) {
+        _gridSpacingY.value = spacing
+    }
+
+    fun setGridSpacing(spacing: Float) {
+        _gridSpacingX.value = spacing
+        _gridSpacingY.value = spacing
+    }
+
+    fun setGridOffsetX(offset: Float) {
+        _gridOffsetX.value = offset
+    }
+
+    fun setGridOffsetY(offset: Float) {
+        _gridOffsetY.value = offset
+    }
+
+    fun setBackgroundColor(color: Int) {
+        _backgroundColor.value = color
     }
 }

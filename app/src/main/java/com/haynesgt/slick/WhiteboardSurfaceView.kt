@@ -75,6 +75,12 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     private val drawMatrix = Matrix()
     private val inverseMatrix = Matrix()
 
+    private val gridPaint = Paint().apply {
+        color = Color.LTGRAY
+        strokeWidth = 1f
+        style = Paint.Style.STROKE
+    }
+
     private val renderer: CanvasFrontBufferedRenderer<List<Vector2D>> = CanvasFrontBufferedRenderer(
         this,
         object : CanvasFrontBufferedRenderer.Callback<List<Vector2D>> {
@@ -149,6 +155,46 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         }
         viewModel.invertColors.observe(owner) {
             updateInvertFilter()
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.showGrid.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.showGridHorizontal.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.showGridVertical.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.gridSpacingX.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.gridSpacingY.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.gridOffsetX.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.gridOffsetY.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.backgroundColor.observe(owner) {
             if (this.holder.surface.isValid) {
                 renderer.commit()
             }
@@ -310,9 +356,14 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         if (viewModel.invertColors.value == true) {
             canvas.saveLayer(null, invertPaint)
         }
-        canvas.drawColor(Color.WHITE)
+        canvas.drawColor(viewModel.backgroundColor.value ?: Color.WHITE)
         canvas.save()
         canvas.concat(drawMatrix)
+
+        if (viewModel.showGrid.value == true) {
+            drawGrid(canvas)
+        }
+
         for (stroke in strokes) {
             drawSingleStroke(canvas, stroke.points)
         }
@@ -325,6 +376,41 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         canvas.restore()
         if (viewModel.invertColors.value == true) {
             canvas.restore()
+        }
+    }
+
+    private fun drawGrid(canvas: Canvas) {
+        val spacingX = viewModel.gridSpacingX.value ?: 50f
+        val spacingY = viewModel.gridSpacingY.value ?: 50f
+        val gridOffX = viewModel.gridOffsetX.value ?: 0f
+        val gridOffY = viewModel.gridOffsetY.value ?: 0f
+        val showHorizontal = viewModel.showGridHorizontal.value ?: true
+        val showVertical = viewModel.showGridVertical.value ?: false
+
+        // Get visible bounds in canvas coordinates
+        val pts = floatArrayOf(0f, 0f, width.toFloat(), height.toFloat())
+        inverseMatrix.mapPoints(pts)
+        val left = pts[0]
+        val top = pts[1]
+        val right = pts[2]
+        val bottom = pts[3]
+
+        if (showVertical) {
+            val startX = (Math.floor(((left - gridOffX) / spacingX).toDouble()) * spacingX + gridOffX).toFloat()
+            var x = startX
+            while (x <= right) {
+                canvas.drawLine(x, top, x, bottom, gridPaint)
+                x += spacingX
+            }
+        }
+
+        if (showHorizontal) {
+            val startY = (Math.floor(((top - gridOffY) / spacingY).toDouble()) * spacingY + gridOffY).toFloat()
+            var y = startY
+            while (y <= bottom) {
+                canvas.drawLine(left, y, right, y, gridPaint)
+                y += spacingY
+            }
         }
     }
 

@@ -234,12 +234,22 @@ class MainActivity : AppCompatActivity() {
                     isCheckable = true
                     isChecked = whiteboardViewModel.controlsLocked.value ?: false
                 }
-                val syncItem = popup.menu.add("Sign in to Google Drive")
+                val account = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
+                val syncItem = if (account != null) {
+                    popup.menu.add("Change Account (${account.email})")
+                } else {
+                    popup.menu.add("Sign in to Google Drive")
+                }
+                val gridSettingsItem = popup.menu.add("Grid Settings...")
+                val bgSettingsItem = popup.menu.add("Background Color...")
+
                 popup.setOnMenuItemClickListener { item ->
                     when (item) {
                         panItem -> whiteboardViewModel.setSingleFingerPanEnabled(!item.isChecked)
                         invertItem -> whiteboardViewModel.setInvertColors(!item.isChecked)
                         lockItem -> whiteboardViewModel.setControlsLocked(!item.isChecked)
+                        gridSettingsItem -> showGridSettingsDialog()
+                        bgSettingsItem -> showBackgroundSettingsDialog()
                         syncItem -> {
                             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                                 .requestEmail()
@@ -322,6 +332,169 @@ class MainActivity : AppCompatActivity() {
             controller.hide(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+    }
+
+    private fun invertColor(color: Int): Int {
+        val r = 255 - Color.red(color)
+        val g = 255 - Color.green(color)
+        val b = 255 - Color.blue(color)
+
+        val r1 = r.toFloat()
+        val g1 = g.toFloat()
+        val b1 = b.toFloat()
+
+        val nr = ((-0.574f * r1 + 1.430f * g1 + 0.144f * b1).toInt()).coerceIn(0, 255)
+        val ng = ((0.426f * r1 + 0.430f * g1 + 0.144f * b1).toInt()).coerceIn(0, 255)
+        val nb = ((0.426f * r1 + 1.430f * g1 - 0.856f * b1).toInt()).coerceIn(0, 255)
+
+        return Color.rgb(nr, ng, nb)
+    }
+
+    private fun showGridSettingsDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(64, 32, 64, 32)
+        }
+
+        val showGridCheck = CheckBox(this).apply {
+            text = "Show Grid"
+            isChecked = whiteboardViewModel.showGrid.value ?: false
+            setOnCheckedChangeListener { _, isChecked -> whiteboardViewModel.setShowGrid(isChecked) }
+        }
+        layout.addView(showGridCheck)
+
+        val showHorizontalCheck = CheckBox(this).apply {
+            text = "Horizontal Lines"
+            isChecked = whiteboardViewModel.showGridHorizontal.value ?: true
+            setOnCheckedChangeListener { _, isChecked -> whiteboardViewModel.setShowGridHorizontal(isChecked) }
+        }
+        layout.addView(showHorizontalCheck)
+
+        val showVerticalCheck = CheckBox(this).apply {
+            text = "Vertical Lines"
+            isChecked = whiteboardViewModel.showGridVertical.value ?: false
+            setOnCheckedChangeListener { _, isChecked -> whiteboardViewModel.setShowGridVertical(isChecked) }
+        }
+        layout.addView(showVerticalCheck)
+
+        layout.addView(TextView(this).apply { text = "\nHorizontal Line Spacing" })
+        val spacingYSlider = SeekBar(this).apply {
+            max = 200
+            progress = (whiteboardViewModel.gridSpacingY.value ?: 50f).toInt()
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                    val value = if (p < 10) 10f else p.toFloat()
+                    whiteboardViewModel.setGridSpacingY(value)
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+        }
+        layout.addView(spacingYSlider)
+
+        layout.addView(TextView(this).apply { text = "Vertical Line Spacing" })
+        val spacingXSlider = SeekBar(this).apply {
+            max = 200
+            progress = (whiteboardViewModel.gridSpacingX.value ?: 50f).toInt()
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                    val value = if (p < 10) 10f else p.toFloat()
+                    whiteboardViewModel.setGridSpacingX(value)
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+        }
+        layout.addView(spacingXSlider)
+
+        layout.addView(TextView(this).apply { text = "\nOffset X" })
+        val offsetXSlider = SeekBar(this).apply {
+            max = 400
+            progress = ((whiteboardViewModel.gridOffsetX.value ?: 0f) + 200).toInt()
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                    whiteboardViewModel.setGridOffsetX((p - 200).toFloat())
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+        }
+        layout.addView(offsetXSlider)
+
+        layout.addView(TextView(this).apply { text = "Offset Y" })
+        val offsetYSlider = SeekBar(this).apply {
+            max = 400
+            progress = ((whiteboardViewModel.gridOffsetY.value ?: 0f) + 200).toInt()
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                    whiteboardViewModel.setGridOffsetY((p - 200).toFloat())
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+        }
+        layout.addView(offsetYSlider)
+
+        AlertDialog.Builder(this)
+            .setTitle("Grid Settings")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
+    private fun showBackgroundSettingsDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(64, 32, 64, 32)
+        }
+
+        val isInverted = whiteboardViewModel.invertColors.value ?: false
+        var currentColor = whiteboardViewModel.backgroundColor.value ?: Color.WHITE
+        
+        // Use a wrapper to handle intelligent inversion
+        // If we want it to LOOK like C on screen, we store C if not inverted, or Invert(C) if inverted.
+        // Let's assume the sliders represent the VISUAL color.
+        
+        var visualColor = if (isInverted) invertColor(currentColor) else currentColor
+
+        val colorPreview = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150).apply {
+                setMargins(0, 0, 0, 24)
+            }
+            setBackgroundColor(visualColor)
+        }
+        layout.addView(colorPreview)
+
+        val currentValues = intArrayOf(Color.red(visualColor), Color.green(visualColor), Color.blue(visualColor))
+        val components = arrayOf("Red", "Green", "Blue")
+
+        components.forEachIndexed { index, name ->
+            layout.addView(TextView(this).apply { text = name })
+            val slider = SeekBar(this).apply {
+                max = 255
+                progress = currentValues[index]
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                        currentValues[index] = p
+                        val pickedColor = Color.rgb(currentValues[0], currentValues[1], currentValues[2])
+                        colorPreview.setBackgroundColor(pickedColor)
+                        
+                        // Intelligent inversion: store color that will look like pickedColor on screen
+                        val colorToStore = if (whiteboardViewModel.invertColors.value == true) invertColor(pickedColor) else pickedColor
+                        whiteboardViewModel.setBackgroundColor(colorToStore)
+                    }
+                    override fun onStartTrackingTouch(s: SeekBar?) {}
+                    override fun onStopTrackingTouch(s: SeekBar?) {}
+                })
+            }
+            layout.addView(slider)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Background Color")
+            .setView(layout)
+            .setPositiveButton("Done", null)
+            .show()
     }
 
     private fun showDocumentsDialog() {
