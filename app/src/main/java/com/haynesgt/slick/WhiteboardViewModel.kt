@@ -24,6 +24,9 @@ class WhiteboardViewModel : ViewModel() {
     private val _singleFingerPanEnabled: MutableLiveData<Boolean> = MutableLiveData(true)
     val singleFingerPanEnabled: LiveData<Boolean> get() = _singleFingerPanEnabled
 
+    private val _invertColors: MutableLiveData<Boolean> = MutableLiveData(false)
+    val invertColors: LiveData<Boolean> get() = _invertColors
+
     private fun addStroke(stroke: Stroke) {
         _strokes.value = _strokes.value?.plus(stroke)
     }
@@ -95,5 +98,9 @@ class WhiteboardViewModel : ViewModel() {
 
     fun setSingleFingerPanEnabled(enabled: Boolean) {
         _singleFingerPanEnabled.value = enabled
+    }
+
+    fun setInvertColors(invert: Boolean) {
+        _invertColors.value = invert
     }
 }

@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PorterDuff
@@ -26,10 +28,42 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     SurfaceHolder.Callback {
 
     private val paint: Paint = Paint().apply {
-        color = Color.WHITE
+        color = Color.BLACK
         strokeWidth = 1f
         style = Paint.Style.STROKE
         isAntiAlias = true
+    }
+
+    private val invertPaint = Paint()
+
+    private fun updateInvertFilter() {
+        if (viewModel.invertColors.value == true) {
+            // Invert filter:
+            // -1,  0,  0, 0, 255
+            //  0, -1,  0, 0, 255
+            //  0,  0, -1, 0, 255
+            //  0,  0,  0, 1, 0
+            val invertMatrix = ColorMatrix(floatArrayOf(
+                -1f,  0f,  0f, 0f, 255f,
+                 0f, -1f,  0f, 0f, 255f,
+                 0f,  0f, -1f, 0f, 255f,
+                 0f,  0f,  0f, 1f, 0f
+            ))
+
+            // Proper Hue Rotation (180 degrees) matrix to preserve color identities
+            // while inverting luminance.
+            val hueRotate180 = ColorMatrix(floatArrayOf(
+                -0.574f,  1.430f,  0.144f, 0f, 0f,
+                 0.426f,  0.430f,  0.144f, 0f, 0f,
+                 0.426f,  1.430f, -0.856f, 0f, 0f,
+                 0f,      0f,      0f,     1f, 0f
+            ))
+
+            invertMatrix.postConcat(hueRotate180)
+            invertPaint.colorFilter = ColorMatrixColorFilter(invertMatrix)
+        } else {
+            invertPaint.colorFilter = null
+        }
     }
 
     private lateinit var viewModel: WhiteboardViewModel
@@ -52,10 +86,16 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             ) {
                 // Clear the front buffer to prevent artifacts (jagged lines) from previous segments
                 canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                if (viewModel.invertColors.value == true) {
+                    canvas.saveLayer(null, invertPaint)
+                }
                 canvas.save()
                 canvas.concat(drawMatrix)
                 drawSingleStroke(canvas, param)
                 canvas.restore()
+                if (viewModel.invertColors.value == true) {
+                    canvas.restore()
+                }
             }
 
             override fun onDrawMultiBufferedLayer(
@@ -92,6 +132,12 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             }
         }
         viewModel.lastStrokeCompleteAt.observe(owner) { lastStrokeCompleteAt ->
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.invertColors.observe(owner) {
+            updateInvertFilter()
             if (this.holder.surface.isValid) {
                 renderer.commit()
             }
@@ -245,7 +291,10 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     }
 
     private fun drawStrokes(canvas: Canvas, strokes: List<Stroke>) {
-        canvas.drawColor(Color.rgb(49, 49, 49))
+        if (viewModel.invertColors.value == true) {
+            canvas.saveLayer(null, invertPaint)
+        }
+        canvas.drawColor(Color.WHITE)
         canvas.save()
         canvas.concat(drawMatrix)
         for (stroke in strokes) {
@@ -258,6 +307,9 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             }
         }
         canvas.restore()
+        if (viewModel.invertColors.value == true) {
+            canvas.restore()
+        }
     }
 
     private fun drawSingleStroke(canvas: Canvas, points: List<Vector2D>) {

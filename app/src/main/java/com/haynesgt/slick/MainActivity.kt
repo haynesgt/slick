@@ -142,10 +142,17 @@ class MainActivity : AppCompatActivity() {
                     isCheckable = true
                     isChecked = whiteboardViewModel.singleFingerPanEnabled.value ?: true
                 }
+                val invertItem = popup.menu.add("Invert Colors").apply {
+                    isCheckable = true
+                    isChecked = whiteboardViewModel.invertColors.value ?: false
+                }
                 popup.setOnMenuItemClickListener { item ->
                     if (item == panItem) {
                         val newValue = !item.isChecked
                         whiteboardViewModel.setSingleFingerPanEnabled(newValue)
+                    } else if (item == invertItem) {
+                        val newValue = !item.isChecked
+                        whiteboardViewModel.setInvertColors(newValue)
                     }
                     true
                 }
