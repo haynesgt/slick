@@ -1,7 +1,6 @@
 package com.haynesgt.slick
 
 import android.annotation.SuppressLint
-import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -15,7 +14,10 @@ import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import java.io.File
-import java.io.FileNotFoundException
+import androidx.core.content.edit
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 @RequiresApi(Build.VERSION_CODES.Q)
 class MainActivity : AppCompatActivity() {
@@ -29,7 +31,7 @@ class MainActivity : AppCompatActivity() {
         val sharedPreferences = getSharedPreferences("app_prefs", MODE_PRIVATE)
         if (sharedPreferences.getBoolean("first_run", true)) {
             // do something the first time the app is launched
-            sharedPreferences.edit().putBoolean("first_run", false).apply()
+            sharedPreferences.edit { putBoolean("first_run", false) }
         }
 
         val whiteboardView = WhiteboardSurfaceView(this)
@@ -41,7 +43,7 @@ class MainActivity : AppCompatActivity() {
 
         whiteboardViewModel = ViewModelProvider(this)[WhiteboardViewModel::class.java]
         whiteboardViewModel.fileName.observe(this) { fileName ->
-            sharedPreferences.edit().putString("current_file", fileName).apply()
+            sharedPreferences.edit { putString("current_file", fileName) }
             isInitialLoading = true
             try {
                 val (strokes, viewPort) = drawingBoardSvgService.loadStrokesFromFile(fileName)
@@ -88,13 +90,13 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel.setControlsLocked(sharedPreferences.getBoolean("controls_locked", false))
 
         whiteboardViewModel.singleFingerPanEnabled.observe(this) { enabled ->
-            sharedPreferences.edit().putBoolean("single_finger_pan", enabled).apply()
+            sharedPreferences.edit { putBoolean("single_finger_pan", enabled) }
         }
         whiteboardViewModel.invertColors.observe(this) { inverted ->
-            sharedPreferences.edit().putBoolean("invert_colors", inverted).apply()
+            sharedPreferences.edit { putBoolean("invert_colors", inverted) }
         }
         whiteboardViewModel.controlsLocked.observe(this) { locked ->
-            sharedPreferences.edit().putBoolean("controls_locked", locked).apply()
+            sharedPreferences.edit { putBoolean("controls_locked", locked) }
         }
 
         whiteboardView.onTapped = {
@@ -121,19 +123,6 @@ class MainActivity : AppCompatActivity() {
             whiteboardViewModel.completeCurrentStrokeAt(point)
         }
 
-        window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                )
-        val clearButton = Button(this).apply {
-            text = "Clear"
-            setOnClickListener { whiteboardViewModel.clearStrokes() }
-        }
-
         val documentsButton = Button(this).apply {
             text = "Documents"
             setOnClickListener {
@@ -141,9 +130,7 @@ class MainActivity : AppCompatActivity() {
                 val popup = PopupMenu(this@MainActivity, this)
                 
                 // Add "New" as a special entry at the top
-                popup.menu.add(Menu.NONE, 0, 0, "New Document").apply {
-                    // Make it stand out if possible (bold or icon)
-                }
+                popup.menu.add(Menu.NONE, 0, 0, "New Document")
                 
                 files.forEachIndexed { index, fileName ->
                     // Offset index by 1 because 0 is "New Document"
@@ -221,39 +208,32 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        /*
-        val insetsController = window.insetsController
-        if (isInImmersiveMode) {
-            insetsController?.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-            isInImmersiveMode = false
-        } else {
-            insetsController?.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-            isInImmersiveMode = true
-        }
-         */
-
         val buttonLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            var buttonI = 0
-            addView(documentsButton, buttonI++)
-            addView(sendButton, buttonI++)
-            addView(optionsButton, buttonI++)
-            addView(closeButton, buttonI++)
-            assert(buttonI>1)
-            //addView(clearButton, 2)
+            addView(documentsButton)
+            addView(sendButton)
+            addView(optionsButton)
+            addView(closeButton)
         }
 
         // Add to a layout
         val layout = FrameLayout(this).apply {
-            addView(buttonLayout, 0)
-            addView(whiteboardView, 0)
+            addView(whiteboardView)
+            addView(buttonLayout)
         }
 
         whiteboardViewModel.controlsVisible.observe(this) { controlsVisible ->
             buttonLayout.visibility =
-                if (controlsVisible) LinearLayout.VISIBLE else LinearLayout.GONE
+                if (controlsVisible) View.VISIBLE else View.GONE
         }
 
         setContentView(layout)
+
+        // Hide system bars for immersive mode
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, layout).let { controller ->
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
     }
 }

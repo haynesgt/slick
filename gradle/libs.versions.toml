@@ -19,6 +19,7 @@ graphicsCore = "1.0.2"
 appcompat = "1.7.0"
 pdfbox = "3.0.3"
 playServicesAuth = "21.3.0"
+roomKtx = "2.6.1"
 roomCompiler = "2.6.1"
 roomRuntime = "2.6.1"
 
@@ -26,6 +27,7 @@ roomRuntime = "2.6.1"
 androidsvg = { module = "com.caverock:androidsvg", version.ref = "androidsvg" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "roomCompiler" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "roomKtx" }
 google-api-client-android = { module = "com.google.api-client:google-api-client-android", version.ref = "googleApiClientAndroid" }
 google-api-services-drive = { module = "com.google.apis:google-api-services-drive", version.ref = "googleApiServicesDrive" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
