@@ -86,30 +86,38 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveAndSyncDebounced() {
         syncJob?.cancel()
-        syncJob = lifecycleScope.launch(Dispatchers.IO) {
+        syncJob = lifecycleScope.launch(Dispatchers.Default) {
             delay(2000) // Wait for 2 seconds of inactivity
             val fileName = whiteboardViewModel.fileName.value ?: return@launch
-            val strokes = whiteboardViewModel.strokes.value ?: emptyList()
+            val strokes = whiteboardViewModel.strokes.value?.toList() ?: emptyList()
             val viewPort = whiteboardViewModel.viewPort.value ?: ViewPort(1f, 0f, 0f)
 
-            drawingBoardSvgService.saveStrokesToFile(fileName, strokes, viewPort)
+            withContext(Dispatchers.IO) {
+                drawingBoardSvgService.saveStrokesToFile(fileName, strokes, viewPort)
+            }
             
             // Versioning: save a version to Drive
             val versionFileName = "${fileName.removeSuffix(".svg")}_${System.currentTimeMillis()}.svg"
             val tempVersionFile = File(cacheDir, versionFileName)
             
             try {
-                drawingBoardSvgService.saveStrokesToFile(tempVersionFile, strokes, viewPort)
-                
+                withContext(Dispatchers.IO) {
+                    drawingBoardSvgService.saveStrokesToFile(tempVersionFile, strokes, viewPort)
+                }
+
                 val file = File(filesDir, "drawings/$fileName")
                 if (file.exists()) {
                     googleDriveSyncService.syncFile(file)
                 }
-                
+
                 if (tempVersionFile.exists()) {
-                    googleDriveSyncService.syncFile(tempVersionFile, folderName = "SlickHistory/${fileName.removeSuffix(".svg")}")
-                    tempVersionFile.delete()
+                    googleDriveSyncService.syncFile(
+                        tempVersionFile,
+                        folderName = "SlickHistory/${fileName.removeSuffix(".svg")}"
+                    )
                 }
+            } catch (e: CancellationException) {
+                // do nothing
             } catch (e: Exception) {
                 Log.e("Slick", "Error in saveAndSyncDebounced", e)
             } finally {
