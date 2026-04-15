@@ -3,6 +3,9 @@ package com.haynesgt.slick
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.random.Random
 
 class WhiteboardViewModel : ViewModel() {
@@ -18,7 +21,9 @@ class WhiteboardViewModel : ViewModel() {
     private val _lastStrokeCompleteAt: MutableLiveData<Long> = MutableLiveData(0)
     val lastStrokeCompleteAt: LiveData<Long> get() = _lastStrokeCompleteAt
 
-    private val _fileName: MutableLiveData<String> = MutableLiveData("test.svg")
+    private val _fileName: MutableLiveData<String> = MutableLiveData(
+        "slick_${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.getDefault()).format(Date())}.svg"
+    )
     val fileName: LiveData<String> get() = _fileName
 
     private val _singleFingerPanEnabled: MutableLiveData<Boolean> = MutableLiveData(true)

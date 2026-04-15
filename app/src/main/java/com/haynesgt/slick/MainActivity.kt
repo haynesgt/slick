@@ -51,7 +51,9 @@ class MainActivity : AppCompatActivity() {
 
         whiteboardView.bindViewModel(whiteboardViewModel, this)
 
-        whiteboardViewModel.setFileName(sharedPreferences.getString("current_file", "test.svg")!!)
+        sharedPreferences.getString("current_file", null)?.let { savedFile ->
+            whiteboardViewModel.setFileName(savedFile)
+        }
 
         // Load and persist settings
         whiteboardViewModel.setSingleFingerPanEnabled(sharedPreferences.getBoolean("single_finger_pan", true))
