@@ -78,6 +78,10 @@ class WhiteboardViewModel : ViewModel() {
         _controlsVisible.value = currentVisibility
     }
 
+    fun setControlsVisibility(visible: Boolean) {
+        _controlsVisible.value = visible
+    }
+
     fun setStrokes(strokes: List<Stroke>) {
         _strokes.value = strokes
     }

@@ -73,6 +73,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     )
 
     var onTapped: (() -> Unit)? = null
+    var onSwipeFromEdge: (() -> Unit)? = null
     var onPenDown: ((Vector2D) -> Unit)? = null
     var onPenMove: ((Vector2D) -> Unit)? = null
     var onPenUp: ((Vector2D) -> Unit)? = null
@@ -119,6 +120,18 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             distanceX: Float,
             distanceY: Float
         ): Boolean {
+            if (e1 != null) {
+                val edgeThreshold = 30
+                val isFromLeft = e1.x < edgeThreshold
+                val isFromRight = e1.x > width - edgeThreshold
+                val isFromTop = e1.y < edgeThreshold
+                val isFromBottom = e1.y > height - edgeThreshold
+
+                if (isFromLeft || isFromRight || isFromTop || isFromBottom) {
+                    onSwipeFromEdge?.invoke()
+                    return true
+                }
+            }
             if (e2.pointerCount > 1 || e2.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
                 offsetX -= distanceX
                 offsetY -= distanceY

@@ -53,7 +53,10 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel.setFileName(sharedPreferences.getString("current_file", "test.svg")!!)
 
         whiteboardView.onTapped = {
-            whiteboardViewModel.toggleControlsVisibility()
+            whiteboardViewModel.setControlsVisibility(false)
+        }
+        whiteboardView.onSwipeFromEdge = {
+            whiteboardViewModel.setControlsVisibility(true)
         }
         whiteboardView.onPenDown = { point ->
             whiteboardViewModel.startNewStrokeAt(point)
