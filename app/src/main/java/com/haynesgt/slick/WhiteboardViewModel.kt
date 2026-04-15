@@ -192,15 +192,24 @@ class WhiteboardViewModel : ViewModel() {
     }
 
     fun addPointToCurrentStroke(point: Vector2D, pressure: Float = 1f) {
+        addPointsToCurrentStroke(listOf(point), listOf(pressure))
+    }
+
+    fun addPointsToCurrentStroke(points: List<Vector2D>, pressures: List<Float>) {
         val currentStroke = _currentStroke.value
         if (currentStroke != null) {
-            val p = if (_usePressure.value == true) pressure else 1f
+            val usePressure = _usePressure.value == true
+            val processedPressures = if (usePressure) pressures else pressures.map { 1f }
+            
             _currentStroke.value = currentStroke.copy(
-                points = currentStroke.points.plus(point),
-                pressures = currentStroke.pressures?.plus(p) ?: listOf(p)
+                points = currentStroke.points + points,
+                pressures = currentStroke.pressures?.let { it + processedPressures } ?: processedPressures
             )
-        } else {
-            startNewStrokeAt(point, pressure)
+        } else if (points.isNotEmpty()) {
+            startNewStrokeAt(points[0], pressures[0])
+            if (points.size > 1) {
+                addPointsToCurrentStroke(points.subList(1, points.size), pressures.subList(1, pressures.size))
+            }
         }
     }
 

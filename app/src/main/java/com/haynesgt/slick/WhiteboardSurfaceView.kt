@@ -134,12 +134,13 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
 
     fun bindViewModel(viewModel: WhiteboardViewModel, owner: LifecycleOwner) {
         this.viewModel = viewModel
-        viewModel.currentStroke.observe(owner) { stroke ->
-            if (stroke != null) {
-                // Render the entire current stroke to the front buffer for real-time smoothing
-                this.renderer.renderFrontBufferedLayer(stroke)
-            }
-        }
+        // Avoid redundant observer if we handle it in onTouchEvent for lower latency
+        // viewModel.currentStroke.observe(owner) { stroke ->
+        //     if (stroke != null) {
+        //         // Render the entire current stroke to the front buffer for real-time smoothing
+        //         this.renderer.renderFrontBufferedLayer(stroke)
+        //     }
+        // }
         viewModel.eraserRect.observe(owner) {
             if (this.holder.surface.isValid) {
                 renderer.commit()
@@ -425,13 +426,21 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                         }
                     } else {
                         // Handle historical points for smoother pressure/path
+                        val points = mutableListOf<Vector2D>()
+                        val pressures = mutableListOf<Float>()
                         for (i in 0 until event.historySize) {
-                            val hx = event.getHistoricalX(i)
-                            val hy = event.getHistoricalY(i)
-                            val hp = event.getHistoricalPressure(i)
-                            viewModel.addPointToCurrentStroke(screenToCanvas(hx, hy), hp)
+                            points.add(screenToCanvas(event.getHistoricalX(i), event.getHistoricalY(i)))
+                            pressures.add(event.getHistoricalPressure(i))
                         }
-                        viewModel.addPointToCurrentStroke(canvasPoint, pressure)
+                        points.add(canvasPoint)
+                        pressures.add(pressure)
+                        
+                        viewModel.addPointsToCurrentStroke(points, pressures)
+                        
+                        // Direct render call for ultra-low latency
+                        viewModel.currentStroke.value?.let {
+                            renderer.renderFrontBufferedLayer(it)
+                        }
                     }
                 }
                 MotionEvent.ACTION_UP -> {
@@ -442,6 +451,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                         viewModel.stopErasing()
                     } else {
                         viewModel.completeCurrentStrokeAt(canvasPoint, pressure)
+                        renderer.commit()
                     }
                 }
             }
