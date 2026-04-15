@@ -126,6 +126,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     var onTapped: (() -> Unit)? = null
     var onDown: (() -> Unit)? = null
     var onDoubleTapped: (() -> Unit)? = null
+    var onDoubleFingerTap: (() -> Unit)? = null
     var onSwipeFromEdge: (() -> Unit)? = null
     var onPenDown: ((Vector2D) -> Unit)? = null
     var onPenMove: ((Vector2D) -> Unit)? = null
@@ -333,6 +334,8 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         return Vector2D(pts[0], pts[1])
     }
 
+    private var lastTwoFingerDownTime = 0L
+
     init {
         holder?.addCallback(this)
         updateMatrices()
@@ -367,9 +370,19 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_DOWN) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             onDown?.invoke()
         }
+        
+        // Double finger tap detection
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount == 2) {
+            val time = System.currentTimeMillis()
+            if (time - lastTwoFingerDownTime < 300) {
+                onDoubleFingerTap?.invoke()
+            }
+            lastTwoFingerDownTime = time
+        }
+
         scaleGestureDetector.onTouchEvent(event)
         if (gestureDetector.onTouchEvent(event)) { return true }
         

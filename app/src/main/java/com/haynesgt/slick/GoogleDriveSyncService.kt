@@ -68,81 +68,96 @@ class GoogleDriveSyncService(private val context: Context) {
         initializeDriveService()
     }
 
-    fun syncFile(file: File) {
+    suspend fun syncFile(file: File, folderName: String = this.folderName) = withContext(Dispatchers.IO) {
         if (driveService == null) {
             initializeDriveService()
             if (driveService == null) {
                 _syncStatus.value = SyncStatus.Error("Not signed in to Google Drive")
-                return
+                return@withContext
             }
         }
 
         _syncStatus.value = SyncStatus.Syncing
-        executor.execute {
-            try {
-                val folderId = getOrCreateFolderId() ?: throw Exception("Failed to get or create folder")
-                val driveFileId = findFileId(file.name, folderId)
+        try {
+            val folderId = getOrCreateFolderId(folderName) ?: throw Exception("Failed to get or create folder")
+            val driveFileId = findFileId(file.name, folderId)
 
-                val metadata = com.google.api.services.drive.model.File()
-                    .setName(file.name)
-                    .setParents(Collections.singletonList(folderId))
+            val metadata = com.google.api.services.drive.model.File()
+                .setName(file.name)
+                .setParents(Collections.singletonList(folderId))
 
-                val content = FileContent("image/svg+xml", file)
+            val content = FileContent("image/svg+xml", file)
 
-                if (driveFileId == null) {
-                    driveService!!.files().create(metadata, content).execute()
-                    Log.d("SlickSync", "Created file on Drive: ${file.name}")
-                } else {
-                    driveService!!.files().update(driveFileId, null, content).execute()
-                    Log.d("SlickSync", "Updated file on Drive: ${file.name}")
-                }
-                _syncStatus.value = SyncStatus.Success
-                resetStatusAfterDelay()
-            } catch (e: Exception) {
-                Log.e("SlickSync", "Failed to sync ${file.name}", e)
-                createBackup(file)
-                _syncStatus.value = SyncStatus.Error(e.message ?: "Unknown error")
+            if (driveFileId == null) {
+                driveService!!.files().create(metadata, content).execute()
+                Log.d("SlickSync", "Created file on Drive: ${file.name}")
+            } else {
+                driveService!!.files().update(driveFileId, null, content).execute()
+                Log.d("SlickSync", "Updated file on Drive: ${file.name}")
             }
+            _syncStatus.value = SyncStatus.Success
+            resetStatusAfterDelay()
+        } catch (e: Exception) {
+            Log.e("SlickSync", "Failed to sync ${file.name}", e)
+            createBackup(file)
+            _syncStatus.value = SyncStatus.Error(e.message ?: "Unknown error")
         }
     }
 
-    fun downloadMissingFiles(localFolder: File, onComplete: () -> Unit = {}) {
+    suspend fun downloadMissingFiles(localFolder: File) = withContext(Dispatchers.IO) {
         if (driveService == null) {
             initializeDriveService()
             if (driveService == null) {
                 _syncStatus.value = SyncStatus.Error("Not signed in to Google Drive")
-                return
+                return@withContext
             }
         }
 
         _syncStatus.value = SyncStatus.Syncing
-        executor.execute {
-            try {
-                val folderId = getOrCreateFolderId() ?: return@execute
-                val query = "'$folderId' in parents and trashed = false and mimeType = 'image/svg+xml'"
-                val result = driveService!!.files().list().setQ(query).execute()
-                val driveFiles = result.files ?: emptyList()
+        try {
+            val folderId = getOrCreateFolderId(folderName) ?: return@withContext
+            val query = "'$folderId' in parents and trashed = false and mimeType = 'image/svg+xml'"
+            val result = driveService!!.files().list().setQ(query).execute()
+            val driveFiles = result.files ?: emptyList()
 
-                var downloadedCount = 0
-                for (driveFile in driveFiles) {
-                    val localFile = File(localFolder, driveFile.name)
-                    if (!localFile.exists()) {
-                        FileOutputStream(localFile).use { outputStream ->
-                            driveService!!.files().get(driveFile.id).executeMediaAndDownloadTo(outputStream)
-                        }
-                        downloadedCount++
-                        Log.d("SlickSync", "Downloaded missing file: ${driveFile.name}")
+            var downloadedCount = 0
+            for (driveFile in driveFiles) {
+                val localFile = File(localFolder, driveFile.name)
+                if (!localFile.exists()) {
+                    FileOutputStream(localFile).use { outputStream ->
+                        driveService!!.files().get(driveFile.id).executeMediaAndDownloadTo(outputStream)
                     }
+                    downloadedCount++
+                    Log.d("SlickSync", "Downloaded missing file: ${driveFile.name}")
                 }
-                
-                _syncStatus.value = SyncStatus.Success
-                resetStatusAfterDelay()
-                Log.d("SlickSync", "Download missing files complete. Downloaded $downloadedCount files.")
-                onComplete()
-            } catch (e: Exception) {
-                Log.e("SlickSync", "Failed to download missing files", e)
-                _syncStatus.value = SyncStatus.Error(e.message ?: "Download failed")
             }
+            
+            _syncStatus.value = SyncStatus.Success
+            resetStatusAfterDelay()
+            Log.d("SlickSync", "Download missing files complete. Downloaded $downloadedCount files.")
+        } catch (e: Exception) {
+            Log.e("SlickSync", "Failed to download missing files", e)
+            _syncStatus.value = SyncStatus.Error(e.message ?: "Download failed")
+        }
+    }
+
+    fun listFilesInFolder(folderPath: String): List<com.google.api.services.drive.model.File> {
+        if (driveService == null) return emptyList()
+        try {
+            val folderId = getOrCreateFolderId(folderPath) ?: return emptyList()
+            val query = "'$folderId' in parents and trashed = false"
+            val result = driveService!!.files().list().setQ(query).execute()
+            return result.files ?: emptyList()
+        } catch (e: Exception) {
+            Log.e("SlickSync", "Failed to list files in $folderPath", e)
+            return emptyList()
+        }
+    }
+
+    fun downloadFile(fileId: String, localFile: File) {
+        val drive = driveService ?: throw Exception("Drive service not initialized")
+        FileOutputStream(localFile).use { outputStream ->
+            drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
         }
     }
 
@@ -155,20 +170,27 @@ class GoogleDriveSyncService(private val context: Context) {
         }
     }
 
-    private fun getOrCreateFolderId(): String? {
-        val query = "name = '$folderName' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        val result = driveService!!.files().list().setQ(query).execute()
-        val files = result.files
-        if (files != null && files.isNotEmpty()) {
-            return files[0].id
-        }
+    private fun getOrCreateFolderId(path: String): String? {
+        val parts = path.split("/")
+        var parentId: String? = "root"
 
-        val metadata = com.google.api.services.drive.model.File()
-            .setName(folderName)
-            .setMimeType("application/vnd.google-apps.folder")
-        
-        val folder = driveService!!.files().create(metadata).execute()
-        return folder.id
+        for (part in parts) {
+            val query = "name = '$part' and mimeType = 'application/vnd.google-apps.folder' and '$parentId' in parents and trashed = false"
+            val result = driveService!!.files().list().setQ(query).execute()
+            val files = result.files
+            if (files != null && files.isNotEmpty()) {
+                parentId = files[0].id
+            } else {
+                val metadata = com.google.api.services.drive.model.File()
+                    .setName(part)
+                    .setMimeType("application/vnd.google-apps.folder")
+                    .setParents(if (parentId == "root") null else Collections.singletonList(parentId))
+                
+                val folder = driveService!!.files().create(metadata).execute()
+                parentId = folder.id
+            }
+        }
+        return parentId
     }
 
     private fun findFileId(name: String, folderId: String): String? {

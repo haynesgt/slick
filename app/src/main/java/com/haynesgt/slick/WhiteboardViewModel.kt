@@ -22,6 +22,35 @@ class WhiteboardViewModel : ViewModel() {
     private val _strokes: MutableLiveData<List<Stroke>> = MutableLiveData(listOf())
     val strokes: LiveData<List<Stroke>> get() = _strokes
 
+    private val undoStack = mutableListOf<List<Stroke>>()
+    private val redoStack = mutableListOf<List<Stroke>>()
+
+    private fun saveToUndoStack() {
+        _strokes.value?.let {
+            undoStack.add(it.toList())
+            if (undoStack.size > 50) {
+                undoStack.removeAt(0)
+            }
+        }
+        redoStack.clear()
+    }
+
+    fun undo() {
+        if (undoStack.isNotEmpty()) {
+            val currentState = _strokes.value ?: listOf()
+            redoStack.add(currentState)
+            _strokes.value = undoStack.removeAt(undoStack.size - 1)
+        }
+    }
+
+    fun redo() {
+        if (redoStack.isNotEmpty()) {
+            val currentState = _strokes.value ?: listOf()
+            undoStack.add(currentState)
+            _strokes.value = redoStack.removeAt(redoStack.size - 1)
+        }
+    }
+
     private val _currentTool: MutableLiveData<Tool> = MutableLiveData(Tool.PEN)
     val currentTool: LiveData<Tool> get() = _currentTool
 
@@ -102,17 +131,17 @@ class WhiteboardViewModel : ViewModel() {
     val backgroundColor: LiveData<Int> get() = _backgroundColor
 
     private fun addStroke(stroke: Stroke) {
+        saveToUndoStack()
         _strokes.value = _strokes.value?.plus(stroke)
     }
 
     fun clearStrokes() {
+        saveToUndoStack()
         _strokes.value = listOf()
     }
 
     fun undoStroke() {
-        if (_strokes.value?.isNotEmpty() == true) {
-            _strokes.value = _strokes.value?.dropLast(1)
-        }
+        undo()
     }
 
     fun startNewStrokeAt(point: Vector2D): Stroke {
@@ -261,6 +290,7 @@ class WhiteboardViewModel : ViewModel() {
                     stroke.points.none { p -> p.distanceTo(point) < threshold }
                 }
                 if (newStrokes.size != currentStrokes.size) {
+                    saveToUndoStack()
                     _strokes.value = newStrokes
                 }
             }
@@ -298,6 +328,7 @@ class WhiteboardViewModel : ViewModel() {
                 }
                 
                 if (changed) {
+                    saveToUndoStack()
                     _strokes.value = newStrokes
                 }
             }
@@ -355,6 +386,7 @@ class WhiteboardViewModel : ViewModel() {
         }
         
         if (changed) {
+            saveToUndoStack()
             _strokes.value = newStrokes
         }
         _eraserRect.value = null

@@ -1,25 +1,20 @@
 package com.haynesgt.slick
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
-import org.xmlpull.v1.XmlPullParser
-import org.xmlpull.v1.XmlPullParserFactory
 import java.io.File
 import java.io.FileOutputStream
-import java.lang.StringBuilder
+import java.util.*
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
 import kotlin.math.max
 import kotlin.math.min
-
-data class Stroke(
-    val id: String?,
-    val points: List<Vector2D>,
-    val width: Float = 2f
-)
 
 class DrawingBoardSvgService(private val context: Context) {
 
     private val folderName = "drawings"
-    private val archiveFolderName = "archived"
+    private val archiveFolderName = "archive"
 
     companion object {
         private val fileLock = Any()
@@ -28,105 +23,100 @@ class DrawingBoardSvgService(private val context: Context) {
     fun listSvgFiles(): List<String> {
         val folder = File(context.filesDir, folderName)
         if (!folder.exists()) return emptyList()
-        return folder.listFiles()
-            ?.filter { it.isFile && it.extension == "svg" }
+        return folder.listFiles { file -> file.extension == "svg" }
             ?.map { it.name }
-            ?.sortedDescending()
-            ?: emptyList()
+            ?.sortedDescending() ?: emptyList()
     }
 
     fun listArchivedFiles(): List<String> {
         val folder = File(context.filesDir, archiveFolderName)
         if (!folder.exists()) return emptyList()
-        return folder.listFiles()
-            ?.filter { it.isFile && it.extension == "svg" }
+        return folder.listFiles { file -> file.extension == "svg" }
             ?.map { it.name }
-            ?.sortedDescending()
-            ?: emptyList()
+            ?.sortedDescending() ?: emptyList()
     }
 
     fun archiveFile(fileName: String): Boolean = synchronized(fileLock) {
-        val folder = File(context.filesDir, folderName)
-        val archiveFolder = File(context.filesDir, archiveFolderName)
-        if (!archiveFolder.exists()) archiveFolder.mkdirs()
+        val srcFolder = File(context.filesDir, folderName)
+        val destFolder = File(context.filesDir, archiveFolderName)
+        if (!destFolder.exists()) destFolder.mkdirs()
 
-        val file = File(folder, fileName)
-        val archiveFile = File(archiveFolder, fileName)
-        return if (file.exists()) {
-            file.renameTo(archiveFile)
-        } else {
-            false
+        val srcFile = File(srcFolder, fileName)
+        val destFile = File(destFolder, fileName)
+
+        if (srcFile.exists()) {
+            return srcFile.renameTo(destFile)
         }
+        return false
     }
 
     fun restoreFile(fileName: String): Boolean = synchronized(fileLock) {
-        val folder = File(context.filesDir, folderName)
-        val archiveFolder = File(context.filesDir, archiveFolderName)
-        if (!folder.exists()) folder.mkdirs()
+        val srcFolder = File(context.filesDir, archiveFolderName)
+        val destFolder = File(context.filesDir, folderName)
+        if (!destFolder.exists()) destFolder.mkdirs()
 
-        val file = File(folder, fileName)
-        val archiveFile = File(archiveFolder, fileName)
-        return if (archiveFile.exists()) {
-            archiveFile.renameTo(file)
-        } else {
-            false
+        val srcFile = File(srcFolder, fileName)
+        val destFile = File(destFolder, fileName)
+
+        if (srcFile.exists()) {
+            return srcFile.renameTo(destFile)
         }
+        return false
     }
 
-    fun deleteFile(fileName: String, fromArchive: Boolean = false): Boolean = synchronized(fileLock) {
+    fun deleteFile(fileName: String, fromArchive: Boolean): Boolean = synchronized(fileLock) {
         val folder = File(context.filesDir, if (fromArchive) archiveFolderName else folderName)
         val file = File(folder, fileName)
-        return if (file.exists()) file.delete() else false
+        return file.delete()
     }
 
-    fun renameFile(oldName: String, newName: String, inArchive: Boolean = false): Boolean = synchronized(fileLock) {
+    fun renameFile(oldName: String, newName: String, inArchive: Boolean): Boolean = synchronized(fileLock) {
         val folder = File(context.filesDir, if (inArchive) archiveFolderName else folderName)
-        val oldFile = File(folder, oldName)
-        val newFile = File(folder, if (newName.endsWith(".svg")) newName else "$newName.svg")
-        return if (oldFile.exists() && !newFile.exists()) {
-            oldFile.renameTo(newFile)
-        } else {
-            false
+        val srcFile = File(folder, oldName)
+        val finalNewName = if (newName.endsWith(".svg")) newName else "$newName.svg"
+        val destFile = File(folder, finalNewName)
+
+        if (srcFile.exists() && !destFile.exists()) {
+            return srcFile.renameTo(destFile)
         }
+        return false
     }
 
-    fun importFile(uri: android.net.Uri): String? = synchronized(fileLock) {
-        val folder = File(context.filesDir, folderName)
-        if (!folder.exists()) folder.mkdirs()
-
-        val originalName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.svg"
-        val fileName = getUniqueFileName(originalName)
-        val targetFile = File(folder, fileName)
-
+    fun importFile(uri: Uri): String? = synchronized(fileLock) {
         try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                targetFile.outputStream().use { outputStream ->
+            val contentResolver = context.contentResolver
+            val originalName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.svg"
+            val uniqueName = getUniqueFileName(originalName)
+            val folder = File(context.filesDir, folderName)
+            if (!folder.exists()) folder.mkdirs()
+            val destFile = File(folder, uniqueName)
+
+            contentResolver.openInputStream(uri)?.use { inputStream ->
+                destFile.outputStream().use { outputStream ->
                     inputStream.copyTo(outputStream)
                 }
             }
-            return fileName
+            return uniqueName
         } catch (e: Exception) {
-            Log.e("Slick", "Error importing file from $uri", e)
+            Log.e("Slick", "Error importing file", e)
             return null
         }
     }
 
     private fun getUniqueFileName(baseName: String): String {
         val folder = File(context.filesDir, folderName)
-        val nameWithoutExtension = baseName.removeSuffix(".svg")
-        val extension = ".svg"
-        
-        var fileName = baseName
-        var counter = 1
-        
-        while (File(folder, fileName).exists()) {
-            fileName = "$nameWithoutExtension ($counter)$extension"
-            counter++
+        var name = baseName
+        var count = 1
+        while (File(folder, name).exists()) {
+            val extension = baseName.substringAfterLast(".", "svg")
+            val nameWithoutExtension = baseName.substringBeforeLast(".")
+            name = "$nameWithoutExtension ($count).$extension"
+            count++
         }
-        return fileName
+        return name
     }
 
-    private fun getFileNameFromUri(uri: android.net.Uri): String? {
+    private fun getFileNameFromUri(uri: Uri): String? {
         var name: String? = null
         val cursor = context.contentResolver.query(uri, null, null, null, null)
         cursor?.use {
@@ -140,10 +130,7 @@ class DrawingBoardSvgService(private val context: Context) {
         return name
     }
 
-    fun loadStrokesFromFile(fileName: String, fromArchive: Boolean = false): Pair<List<Stroke>, ViewPort> = synchronized(fileLock) {
-        val folder = File(context.filesDir, if (fromArchive) archiveFolderName else folderName)
-        val file = File(folder, fileName)
-
+    fun loadStrokesFromFile(file: File): Pair<List<Stroke>, ViewPort> = synchronized(fileLock) {
         if (!file.exists()) {
             return Pair(emptyList(), ViewPort(1f, 0f, 0f))
         }
@@ -173,16 +160,13 @@ class DrawingBoardSvgService(private val context: Context) {
                             val d = parser.getAttributeValue(null, "d") ?: ""
                             val strokeWidth = parser.getAttributeValue(null, "stroke-width")?.toFloatOrNull() ?: 2f
                             
-                            // Simple SVG path parsing (M, L, Q)
                             val pattern = """([MLQ])([^MLQ]*)""".toRegex()
                             pattern.findAll(d).forEach { matchResult ->
-                                val command = matchResult.groupValues[1]
                                 val params = matchResult.groupValues[2].trim()
                                     .split("""[\s,]+""".toRegex())
                                     .filter { it.isNotEmpty() }
                                 
                                 if (params.size >= 2) {
-                                    // For M, L, Q, the last two numbers are the end point
                                     val x = params[params.size - 2].toFloatOrNull() ?: 0f
                                     val y = params[params.size - 1].toFloatOrNull() ?: 0f
                                     points.add(Vector2D(x, y))
@@ -198,23 +182,21 @@ class DrawingBoardSvgService(private val context: Context) {
                 Pair(strokes, viewPort)
             }
         } catch (e: Exception) {
-            Log.e("Slick", "Error parsing SVG file $fileName", e)
-            try {
-                val content = file.readText()
-                Log.e("Slick", "Full file content of $fileName (size ${file.length()}):\n$content")
-            } catch (readEx: Exception) {
-                Log.e("Slick", "Could not read file content for $fileName", readEx)
-            }
+            Log.e("Slick", "Error parsing SVG file ${file.name}", e)
             return Pair(emptyList(), ViewPort(1f, 0f, 0f))
         }
     }
 
-    fun saveStrokesToFile(fileName: String, strokes: List<Stroke>, viewPort: ViewPort) = synchronized(fileLock) {
-        val folder = File(context.filesDir, folderName)
-        if (!folder.exists()) folder.mkdirs()
+    fun loadStrokesFromFile(fileName: String, fromArchive: Boolean = false): Pair<List<Stroke>, ViewPort> {
+        val folder = File(context.filesDir, if (fromArchive) archiveFolderName else folderName)
+        return loadStrokesFromFile(File(folder, fileName))
+    }
+
+    fun saveStrokesToFile(file: File, strokes: List<Stroke>, viewPort: ViewPort) = synchronized(fileLock) {
+        val parent = file.parentFile
+        if (parent != null && !parent.exists()) parent.mkdirs()
         
-        val targetFile = File(folder, fileName)
-        val tempFile = File(folder, "$fileName.tmp")
+        val tempFile = File(file.parent, "${file.name}.tmp")
 
         try {
             FileOutputStream(tempFile).use { fos ->
@@ -286,16 +268,20 @@ class DrawingBoardSvgService(private val context: Context) {
                 }
             }
             
-            // Atomic swap
             if (tempFile.exists()) {
-                if (targetFile.exists()) targetFile.delete()
-                if (!tempFile.renameTo(targetFile)) {
-                    Log.e("Slick", "Failed to rename $tempFile to $targetFile")
+                if (file.exists()) file.delete()
+                if (!tempFile.renameTo(file)) {
+                    Log.e("Slick", "Failed to rename $tempFile to $file")
                 }
             }
         } catch (e: Exception) {
-            Log.e("Slick", "Error saving strokes to $fileName", e)
+            Log.e("Slick", "Error saving strokes to ${file.name}", e)
             if (tempFile.exists()) tempFile.delete()
         }
+    }
+
+    fun saveStrokesToFile(fileName: String, strokes: List<Stroke>, viewPort: ViewPort) {
+        val folder = File(context.filesDir, folderName)
+        saveStrokesToFile(File(folder, fileName), strokes, viewPort)
     }
 }

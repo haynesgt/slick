@@ -47,13 +47,12 @@ class MainActivity : AppCompatActivity() {
         if (result.resultCode == RESULT_OK) {
             googleDriveSyncService.reset()
             Toast.makeText(this, "Signed in to Google Drive", Toast.LENGTH_SHORT).show()
-            googleDriveSyncService.downloadMissingFiles(File(filesDir, "drawings")) {
-                runOnUiThread {
-                    Toast.makeText(this, "Downloaded missing files from Drive", Toast.LENGTH_SHORT).show()
-                    if (currentDialog?.isShowing == true) {
-                        currentDialog?.dismiss()
-                        showDocumentsDialog()
-                    }
+            lifecycleScope.launch {
+                googleDriveSyncService.downloadMissingFiles(File(filesDir, "drawings"))
+                Toast.makeText(this@MainActivity, "Downloaded missing files from Drive", Toast.LENGTH_SHORT).show()
+                if (currentDialog?.isShowing == true) {
+                    currentDialog?.dismiss()
+                    showDocumentsDialog()
                 }
             }
         }
@@ -95,9 +94,26 @@ class MainActivity : AppCompatActivity() {
 
             drawingBoardSvgService.saveStrokesToFile(fileName, strokes, viewPort)
             
-            val file = File(filesDir, "drawings/$fileName")
-            if (file.exists()) {
-                googleDriveSyncService.syncFile(file)
+            // Versioning: save a version to Drive
+            val versionFileName = "${fileName.removeSuffix(".svg")}_${System.currentTimeMillis()}.svg"
+            val tempVersionFile = File(cacheDir, versionFileName)
+            
+            try {
+                drawingBoardSvgService.saveStrokesToFile(tempVersionFile, strokes, viewPort)
+                
+                val file = File(filesDir, "drawings/$fileName")
+                if (file.exists()) {
+                    googleDriveSyncService.syncFile(file)
+                }
+                
+                if (tempVersionFile.exists()) {
+                    googleDriveSyncService.syncFile(tempVersionFile, folderName = "SlickHistory/${fileName.removeSuffix(".svg")}")
+                    tempVersionFile.delete()
+                }
+            } catch (e: Exception) {
+                Log.e("Slick", "Error in saveAndSyncDebounced", e)
+            } finally {
+                if (tempVersionFile.exists()) tempVersionFile.delete()
             }
         }
     }
@@ -112,10 +128,9 @@ class MainActivity : AppCompatActivity() {
         drawingBoardSvgService = DrawingBoardSvgService(this)
         googleDriveSyncService = GoogleDriveSyncService(this)
 
-        googleDriveSyncService.downloadMissingFiles(File(filesDir, "drawings")) {
-            runOnUiThread {
-                Toast.makeText(this, "Downloaded missing files from Drive", Toast.LENGTH_SHORT).show()
-            }
+        lifecycleScope.launch {
+            googleDriveSyncService.downloadMissingFiles(File(filesDir, "drawings"))
+            Toast.makeText(this@MainActivity, "Downloaded missing files from Drive", Toast.LENGTH_SHORT).show()
         }
 
         var isInitialLoading = false
@@ -248,6 +263,9 @@ class MainActivity : AppCompatActivity() {
         }
         whiteboardView.onDoubleTapped = {
             whiteboardViewModel.setControlsVisibility(true)
+        }
+        whiteboardView.onDoubleFingerTap = {
+            whiteboardViewModel.undo()
         }
         whiteboardView.onSwipeFromEdge = {
             whiteboardViewModel.setControlsVisibility(true)
@@ -395,8 +413,18 @@ class MainActivity : AppCompatActivity() {
                 text = "Eraser"
                 setOnClickListener { whiteboardViewModel.setCurrentTool(Tool.ERASER) }
             }
+            val undoBtn = Button(this@MainActivity).apply {
+                text = "Undo"
+                setOnClickListener { whiteboardViewModel.undo() }
+            }
+            val redoBtn = Button(this@MainActivity).apply {
+                text = "Redo"
+                setOnClickListener { whiteboardViewModel.redo() }
+            }
             addView(penBtn)
             addView(eraserBtn)
+            addView(undoBtn)
+            addView(redoBtn)
 
             whiteboardViewModel.currentTool.observe(this@MainActivity) { tool ->
                 penBtn.setTypeface(null, if (tool == Tool.PEN) Typeface.BOLD else Typeface.NORMAL)
@@ -953,12 +981,11 @@ class MainActivity : AppCompatActivity() {
                             val client = GoogleSignIn.getClient(this@MainActivity, gso)
                             googleSignInLauncher.launch(client.signInIntent)
                         } else {
-                            googleDriveSyncService.downloadMissingFiles(File(filesDir, "drawings")) {
-                                runOnUiThread {
-                                    currentDialog?.dismiss()
-                                    showDocumentsDialog()
-                                    Toast.makeText(this@MainActivity, "Sync complete", Toast.LENGTH_SHORT).show()
-                                }
+                            lifecycleScope.launch {
+                                googleDriveSyncService.downloadMissingFiles(File(filesDir, "drawings"))
+                                currentDialog?.dismiss()
+                                showDocumentsDialog()
+                                Toast.makeText(this@MainActivity, "Sync complete", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -1011,6 +1038,13 @@ class MainActivity : AppCompatActivity() {
                         } else {
                             Toast.makeText(this@MainActivity, "Failed to archive", Toast.LENGTH_SHORT).show()
                         }
+                    }
+                })
+                addView(Button(this@MainActivity).apply {
+                    text = "📜"
+                    layoutParams = LinearLayout.LayoutParams(120, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    setOnClickListener {
+                        showHistoryDialog(fileName)
                     }
                 })
             }
@@ -1092,40 +1126,101 @@ class MainActivity : AppCompatActivity() {
     private var currentDialog: AlertDialog? = null
 
     private fun showRenameDialog(oldName: String, inArchive: Boolean = false) {
-        val cleanName = oldName.removeSuffix(".svg")
-        val input = EditText(this).apply {
-            setText(cleanName)
-            selectAll()
-            requestFocus()
+        // ...
+    }
+
+    private fun showHistoryDialog(fileName: String) {
+        val dialogView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 32, 32, 32)
         }
 
-        val container = FrameLayout(this).apply {
-            setPadding(48, 16, 48, 0)
-            addView(input)
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            addView(dialogView)
         }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(scroll)
+        }
+
+        val loadingText = TextView(this).apply { text = "Loading history from Drive..." }
+        dialogView.addView(loadingText)
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Rename $cleanName")
+            .setTitle("History: ${fileName.removeSuffix(".svg")}")
             .setView(container)
-            .setPositiveButton("Rename") { _, _ ->
-                val newName = input.text.toString()
-                if (newName.isNotBlank() && newName != cleanName) {
-                    if (drawingBoardSvgService.renameFile(oldName, newName, inArchive)) {
-                        val finalName = if (newName.endsWith(".svg")) newName else "$newName.svg"
-                        if (whiteboardViewModel.fileName.value == oldName && !inArchive) {
-                            whiteboardViewModel.setFileName(finalName)
+            .setNegativeButton("Close", null)
+            .show()
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val historyFiles = googleDriveSyncService.listFilesInFolder("SlickHistory/${fileName.removeSuffix(".svg")}")
+            runOnUiThread {
+                dialogView.removeView(loadingText)
+                if (historyFiles.isEmpty()) {
+                    dialogView.addView(TextView(this@MainActivity).apply { text = "No history found on Drive." })
+                }
+                historyFiles.sortedByDescending { it.name }.forEach { driveFile ->
+                    val row = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, 8, 0, 8)
+
+                        val timestamp = try {
+                            val ts = driveFile.name.substringAfterLast("_").substringBefore(".svg").toLong()
+                            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(ts))
+                        } catch (e: Exception) {
+                            driveFile.name
                         }
-                        currentDialog?.dismiss()
-                        if (inArchive) showArchiveDialog() else showDocumentsDialog()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Failed to rename", Toast.LENGTH_SHORT).show()
+
+                        val nameText = TextView(this@MainActivity).apply {
+                            text = timestamp
+                            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                            textSize = 16f
+                        }
+                        addView(nameText)
+
+                        addView(Button(this@MainActivity).apply {
+                            text = "Restore"
+                            setOnClickListener {
+                                dialog.dismiss()
+                                restoreFromHistory(fileName, driveFile.id, driveFile.name)
+                            }
+                        })
                     }
+                    dialogView.addView(row)
                 }
             }
-            .setNegativeButton("Cancel", null)
-            .create()
+        }
+    }
 
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
-        dialog.show()
+    private fun restoreFromHistory(originalFileName: String, driveFileId: String, driveFileName: String) {
+        val progressDialog = AlertDialog.Builder(this)
+            .setMessage("Restoring version...")
+            .setCancelable(false)
+            .show()
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val tempFile = File(cacheDir, driveFileName)
+                googleDriveSyncService.downloadFile(driveFileId, tempFile)
+                
+                val (strokes, viewPort) = drawingBoardSvgService.loadStrokesFromFile(tempFile)
+                
+                runOnUiThread {
+                    whiteboardViewModel.setFileName(originalFileName)
+                    whiteboardViewModel.setStrokes(strokes)
+                    whiteboardViewModel.setViewPort(viewPort)
+                    progressDialog.dismiss()
+                    Toast.makeText(this@MainActivity, "Version restored", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    progressDialog.dismiss()
+                    Toast.makeText(this@MainActivity, "Restore failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 }
