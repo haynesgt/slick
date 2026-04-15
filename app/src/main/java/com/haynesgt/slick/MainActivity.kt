@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Gravity
 import android.view.Menu
+import android.view.WindowManager
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -419,11 +420,18 @@ class MainActivity : AppCompatActivity() {
         val cleanName = oldName.removeSuffix(".svg")
         val input = EditText(this).apply {
             setText(cleanName)
-            setSelection(cleanName.length)
+            selectAll()
+            requestFocus()
         }
-        AlertDialog.Builder(this)
-            .setTitle("Rename Document")
-            .setView(input)
+
+        val container = FrameLayout(this).apply {
+            setPadding(48, 16, 48, 0)
+            addView(input)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Rename $cleanName")
+            .setView(container)
             .setPositiveButton("Rename") { _, _ ->
                 val newName = input.text.toString()
                 if (newName.isNotBlank() && newName != cleanName) {
@@ -440,6 +448,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Cancel", null)
-            .show()
+            .create()
+
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        dialog.show()
     }
 }
