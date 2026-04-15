@@ -62,6 +62,12 @@ class WhiteboardViewModel : ViewModel() {
     private val _gridOffsetY: MutableLiveData<Float> = MutableLiveData(0f)
     val gridOffsetY: LiveData<Float> get() = _gridOffsetY
 
+    private val _gridColor: MutableLiveData<Int> = MutableLiveData(Color.LTGRAY)
+    val gridColor: LiveData<Int> get() = _gridColor
+
+    private val _gridThickness: MutableLiveData<Float> = MutableLiveData(1f)
+    val gridThickness: LiveData<Float> get() = _gridThickness
+
     private val _backgroundColor: MutableLiveData<Int> = MutableLiveData(Color.WHITE)
     val backgroundColor: LiveData<Int> get() = _backgroundColor
 
@@ -191,6 +197,14 @@ class WhiteboardViewModel : ViewModel() {
 
     fun setGridOffsetY(offset: Float) {
         _gridOffsetY.value = offset
+    }
+
+    fun setGridColor(color: Int) {
+        _gridColor.value = color
+    }
+
+    fun setGridThickness(thickness: Float) {
+        _gridThickness.value = thickness
     }
 
     fun setBackgroundColor(color: Int) {

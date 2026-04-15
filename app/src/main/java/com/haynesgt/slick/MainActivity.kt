@@ -23,6 +23,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.*
@@ -154,6 +156,16 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel.setSingleFingerPanEnabled(sharedPreferences.getBoolean("single_finger_pan", true))
         whiteboardViewModel.setInvertColors(sharedPreferences.getBoolean("invert_colors", false))
         whiteboardViewModel.setControlsLocked(sharedPreferences.getBoolean("controls_locked", false))
+        whiteboardViewModel.setShowGrid(sharedPreferences.getBoolean("show_grid", false))
+        whiteboardViewModel.setShowGridHorizontal(sharedPreferences.getBoolean("show_grid_horizontal", true))
+        whiteboardViewModel.setShowGridVertical(sharedPreferences.getBoolean("show_grid_vertical", false))
+        whiteboardViewModel.setGridSpacingX(sharedPreferences.getFloat("grid_spacing_x", 50f))
+        whiteboardViewModel.setGridSpacingY(sharedPreferences.getFloat("grid_spacing_y", 50f))
+        whiteboardViewModel.setGridOffsetX(sharedPreferences.getFloat("grid_offset_x", 0f))
+        whiteboardViewModel.setGridOffsetY(sharedPreferences.getFloat("grid_offset_y", 0f))
+        whiteboardViewModel.setGridColor(sharedPreferences.getInt("grid_color", Color.LTGRAY))
+        whiteboardViewModel.setGridThickness(sharedPreferences.getFloat("grid_thickness", 1f))
+        whiteboardViewModel.setBackgroundColor(sharedPreferences.getInt("background_color", Color.WHITE))
 
         whiteboardViewModel.singleFingerPanEnabled.observe(this) { enabled ->
             sharedPreferences.edit { putBoolean("single_finger_pan", enabled) }
@@ -163,6 +175,36 @@ class MainActivity : AppCompatActivity() {
         }
         whiteboardViewModel.controlsLocked.observe(this) { locked ->
             sharedPreferences.edit { putBoolean("controls_locked", locked) }
+        }
+        whiteboardViewModel.showGrid.observe(this) { show ->
+            sharedPreferences.edit { putBoolean("show_grid", show) }
+        }
+        whiteboardViewModel.showGridHorizontal.observe(this) { show ->
+            sharedPreferences.edit { putBoolean("show_grid_horizontal", show) }
+        }
+        whiteboardViewModel.showGridVertical.observe(this) { show ->
+            sharedPreferences.edit { putBoolean("show_grid_vertical", show) }
+        }
+        whiteboardViewModel.gridSpacingX.observe(this) { spacing ->
+            sharedPreferences.edit { putFloat("grid_spacing_x", spacing) }
+        }
+        whiteboardViewModel.gridSpacingY.observe(this) { spacing ->
+            sharedPreferences.edit { putFloat("grid_spacing_y", spacing) }
+        }
+        whiteboardViewModel.gridOffsetX.observe(this) { offset ->
+            sharedPreferences.edit { putFloat("grid_offset_x", offset) }
+        }
+        whiteboardViewModel.gridOffsetY.observe(this) { offset ->
+            sharedPreferences.edit { putFloat("grid_offset_y", offset) }
+        }
+        whiteboardViewModel.gridColor.observe(this) { color ->
+            sharedPreferences.edit { putInt("grid_color", color) }
+        }
+        whiteboardViewModel.gridThickness.observe(this) { thickness ->
+            sharedPreferences.edit { putFloat("grid_thickness", thickness) }
+        }
+        whiteboardViewModel.backgroundColor.observe(this) { color ->
+            sharedPreferences.edit { putInt("background_color", color) }
         }
 
         syncStatusTextView = TextView(this).apply {
@@ -435,6 +477,112 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(offsetYSlider)
 
+        layout.addView(TextView(this).apply { text = "\nGrid Thickness" })
+        val thicknessSlider = SeekBar(this).apply {
+            max = 20
+            progress = (whiteboardViewModel.gridThickness.value ?: 1f).toInt()
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                    val value = if (p < 1) 1f else p.toFloat()
+                    whiteboardViewModel.setGridThickness(value)
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+        }
+        layout.addView(thicknessSlider)
+
+        layout.addView(TextView(this).apply { text = "\nGrid Color" })
+        val isInverted = whiteboardViewModel.invertColors.value ?: false
+        val currentGridColor = whiteboardViewModel.gridColor.value ?: Color.LTGRAY
+        val visualGridColor = if (isInverted) invertColor(currentGridColor) else currentGridColor
+        
+        val gridHsl = FloatArray(3)
+        ColorUtils.colorToHSL(visualGridColor, gridHsl)
+
+        val gridColorPreview = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 100).apply {
+                setMargins(0, 16, 0, 16)
+            }
+            setBackgroundColor(visualGridColor)
+        }
+        layout.addView(gridColorPreview)
+
+        fun updateGridUI() {
+            val pickedColor = ColorUtils.HSLToColor(gridHsl)
+            gridColorPreview.setBackgroundColor(pickedColor)
+            val colorToStore = if (whiteboardViewModel.invertColors.value == true) invertColor(pickedColor) else pickedColor
+            whiteboardViewModel.setGridColor(colorToStore)
+        }
+
+        val (gridHueSlider, gridHueGradient) = createColorSlider(360, gridHsl[0].toInt()) { p ->
+            gridHsl[0] = p.toFloat()
+            updateGridUI()
+        }
+        layout.addView(TextView(this).apply { text = "Hue" })
+        layout.addView(gridHueSlider.parent as View)
+        
+        val (gridSatSlider, gridSatGradient) = createColorSlider(100, (gridHsl[1] * 100).toInt()) { p ->
+            gridHsl[1] = p / 100f
+            updateGridUI()
+        }
+        layout.addView(TextView(this).apply { text = "Saturation" })
+        layout.addView(gridSatSlider.parent as View)
+
+        val (gridLightSlider, gridLightGradient) = createColorSlider(100, (gridHsl[2] * 100).toInt()) { p ->
+            gridHsl[2] = p / 100f
+            updateGridUI()
+        }
+        layout.addView(TextView(this).apply { text = "Lightness" })
+        layout.addView(gridLightSlider.parent as View)
+
+        // Initial gradient setup for grid sliders
+        gridHueGradient.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+            Color.RED, Color.YELLOW, Color.GREEN, Color.CYAN, Color.BLUE, Color.MAGENTA, Color.RED
+        ))
+        
+        val updateGradients = {
+            val hStart = floatArrayOf(gridHsl[0], 0f, gridHsl[2])
+            val hEnd = floatArrayOf(gridHsl[0], 1f, gridHsl[2])
+            gridSatGradient.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+                ColorUtils.HSLToColor(hStart), ColorUtils.HSLToColor(hEnd)
+            ))
+            val lMid = floatArrayOf(gridHsl[0], gridHsl[1], 0.5f)
+            gridLightGradient.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+                Color.BLACK, ColorUtils.HSLToColor(lMid), Color.WHITE
+            ))
+        }
+        
+        // Add listeners to update gradients too
+        gridHueSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                gridHsl[0] = p.toFloat()
+                updateGridUI()
+                updateGradients()
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        gridSatSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                gridHsl[1] = p / 100f
+                updateGridUI()
+                updateGradients()
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        gridLightSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                gridHsl[2] = p / 100f
+                updateGridUI()
+                updateGradients()
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        updateGradients()
+
         AlertDialog.Builder(this)
             .setTitle("Grid Settings")
             .setView(layout)
@@ -449,13 +597,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         val isInverted = whiteboardViewModel.invertColors.value ?: false
-        var currentColor = whiteboardViewModel.backgroundColor.value ?: Color.WHITE
+        val currentColor = whiteboardViewModel.backgroundColor.value ?: Color.WHITE
+        val visualColor = if (isInverted) invertColor(currentColor) else currentColor
         
-        // Use a wrapper to handle intelligent inversion
-        // If we want it to LOOK like C on screen, we store C if not inverted, or Invert(C) if inverted.
-        // Let's assume the sliders represent the VISUAL color.
-        
-        var visualColor = if (isInverted) invertColor(currentColor) else currentColor
+        val hsl = FloatArray(3)
+        ColorUtils.colorToHSL(visualColor, hsl)
 
         val colorPreview = View(this).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150).apply {
@@ -465,36 +611,102 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(colorPreview)
 
-        val currentValues = intArrayOf(Color.red(visualColor), Color.green(visualColor), Color.blue(visualColor))
-        val components = arrayOf("Red", "Green", "Blue")
+        val (hueSlider, hueGradient) = createColorSlider(360, hsl[0].toInt()) { p -> }
+        val (satSlider, satGradient) = createColorSlider(100, (hsl[1] * 100).toInt()) { p -> }
+        val (lightSlider, lightGradient) = createColorSlider(100, (hsl[2] * 100).toInt()) { p -> }
 
-        components.forEachIndexed { index, name ->
-            layout.addView(TextView(this).apply { text = name })
-            val slider = SeekBar(this).apply {
-                max = 255
-                progress = currentValues[index]
-                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
-                        currentValues[index] = p
-                        val pickedColor = Color.rgb(currentValues[0], currentValues[1], currentValues[2])
-                        colorPreview.setBackgroundColor(pickedColor)
-                        
-                        // Intelligent inversion: store color that will look like pickedColor on screen
-                        val colorToStore = if (whiteboardViewModel.invertColors.value == true) invertColor(pickedColor) else pickedColor
-                        whiteboardViewModel.setBackgroundColor(colorToStore)
-                    }
-                    override fun onStartTrackingTouch(s: SeekBar?) {}
-                    override fun onStopTrackingTouch(s: SeekBar?) {}
-                })
-            }
-            layout.addView(slider)
+        fun updateUI() {
+            val pickedColor = ColorUtils.HSLToColor(hsl)
+            colorPreview.setBackgroundColor(pickedColor)
+            
+            // Hue gradient (static rainbow)
+            hueGradient.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+                Color.RED, Color.YELLOW, Color.GREEN, Color.CYAN, Color.BLUE, Color.MAGENTA, Color.RED
+            ))
+
+            // Saturation gradient (gray to full color at current L)
+            val hslStart = floatArrayOf(hsl[0], 0f, hsl[2])
+            val hslEnd = floatArrayOf(hsl[0], 1f, hsl[2])
+            satGradient.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+                ColorUtils.HSLToColor(hslStart), ColorUtils.HSLToColor(hslEnd)
+            ))
+
+            // Lightness gradient (black to color to white)
+            val hslMid = floatArrayOf(hsl[0], hsl[1], 0.5f)
+            lightGradient.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+                Color.BLACK, ColorUtils.HSLToColor(hslMid), Color.WHITE
+            ))
+
+            val colorToStore = if (whiteboardViewModel.invertColors.value == true) invertColor(pickedColor) else pickedColor
+            whiteboardViewModel.setBackgroundColor(colorToStore)
         }
+
+        hueSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                hsl[0] = p.toFloat()
+                updateUI()
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        satSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                hsl[1] = p / 100f
+                updateUI()
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        lightSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                hsl[2] = p / 100f
+                updateUI()
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+
+        layout.addView(TextView(this).apply { text = "Hue" })
+        layout.addView(hueSlider.parent as View)
+        layout.addView(TextView(this).apply { text = "Saturation" })
+        layout.addView(satSlider.parent as View)
+        layout.addView(TextView(this).apply { text = "Lightness" })
+        layout.addView(lightSlider.parent as View)
+
+        updateUI()
 
         AlertDialog.Builder(this)
             .setTitle("Background Color")
             .setView(layout)
             .setPositiveButton("Done", null)
             .show()
+    }
+
+    private fun createColorSlider(max: Int, initialProgress: Int, update: (Int) -> Unit): Pair<SeekBar, View> {
+        val container = FrameLayout(this)
+        val gradientView = View(this).apply {
+            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 40).apply {
+                gravity = Gravity.CENTER_VERTICAL
+            }
+        }
+        val seekBar = SeekBar(this).apply {
+            this.max = max
+            this.progress = initialProgress
+            // Make the seekbar track transparent so we see the gradient underneath
+            progressDrawable = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                    update(p)
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+        }
+        container.addView(gradientView)
+        container.addView(seekBar)
+        return Pair(seekBar, gradientView)
     }
 
     private fun showDocumentsDialog() {

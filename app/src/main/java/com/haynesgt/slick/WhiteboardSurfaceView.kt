@@ -194,6 +194,16 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                 renderer.commit()
             }
         }
+        viewModel.gridColor.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.gridThickness.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
         viewModel.backgroundColor.observe(owner) {
             if (this.holder.surface.isValid) {
                 renderer.commit()
@@ -386,6 +396,11 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         val gridOffY = viewModel.gridOffsetY.value ?: 0f
         val showHorizontal = viewModel.showGridHorizontal.value ?: true
         val showVertical = viewModel.showGridVertical.value ?: false
+        val color = viewModel.gridColor.value ?: Color.LTGRAY
+        val thickness = viewModel.gridThickness.value ?: 1f
+
+        gridPaint.color = color
+        gridPaint.strokeWidth = thickness
 
         // Get visible bounds in canvas coordinates
         val pts = floatArrayOf(0f, 0f, width.toFloat(), height.toFloat())
