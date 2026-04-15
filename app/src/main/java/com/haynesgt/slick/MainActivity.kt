@@ -54,7 +54,15 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel.setFileName(sharedPreferences.getString("current_file", "test.svg")!!)
 
         whiteboardView.onTapped = {
-            whiteboardViewModel.setControlsVisibility(false)
+            // No longer needed for hiding since we use onDown
+        }
+        whiteboardView.onDown = {
+            if (whiteboardViewModel.controlsLocked.value != true) {
+                whiteboardViewModel.setControlsVisibility(false)
+            }
+        }
+        whiteboardView.onDoubleTapped = {
+            whiteboardViewModel.setControlsVisibility(true)
         }
         whiteboardView.onSwipeFromEdge = {
             whiteboardViewModel.setControlsVisibility(true)
@@ -146,17 +154,35 @@ class MainActivity : AppCompatActivity() {
                     isCheckable = true
                     isChecked = whiteboardViewModel.invertColors.value ?: false
                 }
+                val lockItem = popup.menu.add("Lock Toolbar").apply {
+                    isCheckable = true
+                    isChecked = whiteboardViewModel.controlsLocked.value ?: false
+                }
                 popup.setOnMenuItemClickListener { item ->
-                    if (item == panItem) {
-                        val newValue = !item.isChecked
-                        whiteboardViewModel.setSingleFingerPanEnabled(newValue)
-                    } else if (item == invertItem) {
-                        val newValue = !item.isChecked
-                        whiteboardViewModel.setInvertColors(newValue)
+                    when (item) {
+                        panItem -> {
+                            val newValue = !item.isChecked
+                            whiteboardViewModel.setSingleFingerPanEnabled(newValue)
+                        }
+                        invertItem -> {
+                            val newValue = !item.isChecked
+                            whiteboardViewModel.setInvertColors(newValue)
+                        }
+                        lockItem -> {
+                            val newValue = !item.isChecked
+                            whiteboardViewModel.setControlsLocked(newValue)
+                        }
                     }
                     true
                 }
                 popup.show()
+            }
+        }
+
+        val closeButton = Button(this).apply {
+            text = "X"
+            setOnClickListener {
+                whiteboardViewModel.setControlsVisibility(false)
             }
         }
 
@@ -189,6 +215,7 @@ class MainActivity : AppCompatActivity() {
             addView(nextPageButton, buttonI++)
             addView(sendButton, buttonI++)
             addView(optionsButton, buttonI++)
+            addView(closeButton, buttonI++)
             assert(buttonI>1)
             //addView(clearButton, 2)
         }

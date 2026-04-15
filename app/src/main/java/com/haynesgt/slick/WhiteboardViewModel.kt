@@ -27,6 +27,9 @@ class WhiteboardViewModel : ViewModel() {
     private val _invertColors: MutableLiveData<Boolean> = MutableLiveData(false)
     val invertColors: LiveData<Boolean> get() = _invertColors
 
+    private val _controlsLocked: MutableLiveData<Boolean> = MutableLiveData(false)
+    val controlsLocked: LiveData<Boolean> get() = _controlsLocked
+
     private fun addStroke(stroke: Stroke) {
         _strokes.value = _strokes.value?.plus(stroke)
     }
@@ -102,5 +105,12 @@ class WhiteboardViewModel : ViewModel() {
 
     fun setInvertColors(invert: Boolean) {
         _invertColors.value = invert
+    }
+
+    fun setControlsLocked(locked: Boolean) {
+        _controlsLocked.value = locked
+        if (locked) {
+            _controlsVisible.value = true
+        }
     }
 }

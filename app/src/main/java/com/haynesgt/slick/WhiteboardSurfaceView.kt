@@ -113,6 +113,8 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     )
 
     var onTapped: (() -> Unit)? = null
+    var onDown: (() -> Unit)? = null
+    var onDoubleTapped: (() -> Unit)? = null
     var onSwipeFromEdge: (() -> Unit)? = null
     var onPenDown: ((Vector2D) -> Unit)? = null
     var onPenMove: ((Vector2D) -> Unit)? = null
@@ -156,7 +158,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             if  (e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
                 return false
             }
-            onTapped?.invoke()
+            onDoubleTapped?.invoke()
             return true
         }
 
@@ -268,6 +270,9 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_DOWN) {
+            onDown?.invoke()
+        }
         scaleGestureDetector.onTouchEvent(event)
         if (gestureDetector.onTouchEvent(event)) { return true }
         
