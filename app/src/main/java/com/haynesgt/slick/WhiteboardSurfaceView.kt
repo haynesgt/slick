@@ -92,18 +92,20 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                 bufferHeight: Int,
                 param: Stroke
             ) {
-                // Clear the front buffer to prevent artifacts (jagged lines) from previous segments
-                canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-                if (viewModel.invertColors.value == true) {
-                    canvas.saveLayer(null, invertPaint)
-                }
-                canvas.save()
-                canvas.concat(drawMatrix)
-                paint.strokeWidth = param.width
-                drawSingleStroke(canvas, param.points)
-                canvas.restore()
-                if (viewModel.invertColors.value == true) {
-                    canvas.restore()
+                val saveCount = canvas.save()
+                try {
+                    // Clear the front buffer to prevent artifacts (jagged lines) from previous segments
+                    canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                    val isInverted = if (::viewModel.isInitialized) viewModel.invertColors.value == true else false
+                    if (isInverted) {
+                        canvas.saveLayer(null, invertPaint)
+                    }
+                    canvas.save()
+                    canvas.concat(drawMatrix)
+                    paint.strokeWidth = param.width
+                    drawSingleStroke(canvas, param.points)
+                } finally {
+                    canvas.restoreToCount(saveCount)
                 }
             }
 
@@ -414,65 +416,68 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     }
 
     private fun drawStrokes(canvas: Canvas, strokes: List<Stroke>) {
-        if (viewModel.invertColors.value == true) {
-            canvas.saveLayer(null, invertPaint)
-        }
-        canvas.drawColor(viewModel.backgroundColor.value ?: Color.WHITE)
-        canvas.save()
-        canvas.concat(drawMatrix)
-
-        if (viewModel.showGrid.value == true) {
-            drawGrid(canvas)
-        }
-
-        for (stroke in strokes) {
-            paint.strokeWidth = stroke.width
-            drawSingleStroke(canvas, stroke.points)
-        }
-        // Also draw the active stroke if it exists, so it stays visible during zoom/pan
-        if (::viewModel.isInitialized) {
-            viewModel.currentStroke.value?.let { current ->
-                paint.strokeWidth = current.width
-                drawSingleStroke(canvas, current.points)
+        val saveCount = canvas.save()
+        try {
+            val isInverted = if (::viewModel.isInitialized) viewModel.invertColors.value == true else false
+            if (isInverted) {
+                canvas.saveLayer(null, invertPaint)
             }
-        }
-        
-        viewModel.eraserRect.value?.let { rect ->
-            val eraserPaint = Paint().apply {
-                color = Color.RED
-                style = Paint.Style.STROKE
-                strokeWidth = 2f / scaleFactor
-                pathEffect = DashPathEffect(floatArrayOf(10f / scaleFactor, 10f / scaleFactor), 0f)
-            }
-            canvas.drawRect(rect, eraserPaint)
-        }
+            canvas.drawColor(if (::viewModel.isInitialized) viewModel.backgroundColor.value ?: Color.WHITE else Color.WHITE)
+            canvas.save()
+            canvas.concat(drawMatrix)
 
-        val indicatorPoint = viewModel.hoverPoint.value ?: viewModel.currentPenPoint.value
-        if (indicatorPoint != null) {
-            if (viewModel.currentTool.value == Tool.ERASER && viewModel.eraserMode.value != EraserMode.RECTANGLE) {
-                val size = viewModel.eraserSize.value ?: 20f
-                val hoverPaint = Paint().apply {
-                    color = Color.RED
-                    style = Paint.Style.STROKE
-                    strokeWidth = 1f / scaleFactor
-                    alpha = 128
+            if (::viewModel.isInitialized && viewModel.showGrid.value == true) {
+                drawGrid(canvas)
+            }
+
+            for (stroke in strokes) {
+                paint.strokeWidth = stroke.width
+                drawSingleStroke(canvas, stroke.points)
+            }
+            // Also draw the active stroke if it exists, so it stays visible during zoom/pan
+            if (::viewModel.isInitialized) {
+                viewModel.currentStroke.value?.let { current ->
+                    paint.strokeWidth = current.width
+                    drawSingleStroke(canvas, current.points)
                 }
-                canvas.drawCircle(indicatorPoint.x, indicatorPoint.y, size / scaleFactor, hoverPaint)
-            } else if (viewModel.currentTool.value == Tool.PEN) {
-                val size = (viewModel.penSize.value ?: 2f) / 2f
-                val hoverPaint = Paint().apply {
-                    color = Color.BLUE
-                    style = Paint.Style.STROKE
-                    strokeWidth = 1f / scaleFactor
-                    alpha = 128
-                }
-                canvas.drawCircle(indicatorPoint.x, indicatorPoint.y, size, hoverPaint)
             }
-        }
 
-        canvas.restore()
-        if (viewModel.invertColors.value == true) {
-            canvas.restore()
+            if (::viewModel.isInitialized) {
+                viewModel.eraserRect.value?.let { rect ->
+                    val eraserPaint = Paint().apply {
+                        color = Color.RED
+                        style = Paint.Style.STROKE
+                        strokeWidth = 2f / scaleFactor
+                        pathEffect = DashPathEffect(floatArrayOf(10f / scaleFactor, 10f / scaleFactor), 0f)
+                    }
+                    canvas.drawRect(rect, eraserPaint)
+                }
+
+                val indicatorPoint = viewModel.hoverPoint.value ?: viewModel.currentPenPoint.value
+                if (indicatorPoint != null) {
+                    if (viewModel.currentTool.value == Tool.ERASER && viewModel.eraserMode.value != EraserMode.RECTANGLE) {
+                        val size = viewModel.eraserSize.value ?: 20f
+                        val hoverPaint = Paint().apply {
+                            color = Color.RED
+                            style = Paint.Style.STROKE
+                            strokeWidth = 1f / scaleFactor
+                            alpha = 128
+                        }
+                        canvas.drawCircle(indicatorPoint.x, indicatorPoint.y, size / scaleFactor, hoverPaint)
+                    } else if (viewModel.currentTool.value == Tool.PEN) {
+                        val size = (viewModel.penSize.value ?: 2f) / 2f
+                        val hoverPaint = Paint().apply {
+                            color = Color.BLUE
+                            style = Paint.Style.STROKE
+                            strokeWidth = 1f / scaleFactor
+                            alpha = 128
+                        }
+                        canvas.drawCircle(indicatorPoint.x, indicatorPoint.y, size, hoverPaint)
+                    }
+                }
+            }
+        } finally {
+            canvas.restoreToCount(saveCount)
         }
     }
 
