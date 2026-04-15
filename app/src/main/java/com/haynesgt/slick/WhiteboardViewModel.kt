@@ -11,7 +11,7 @@ import java.util.Locale
 import kotlin.random.Random
 
 enum class Tool {
-    PEN, ERASER
+    PEN, ERASER, HIGHLIGHTER
 }
 
 enum class EraserMode {
@@ -65,6 +65,15 @@ class WhiteboardViewModel : ViewModel() {
 
     private val _penSize: MutableLiveData<Float> = MutableLiveData(2f)
     val penSize: LiveData<Float> get() = _penSize
+
+    private val _highlighterSize: MutableLiveData<Float> = MutableLiveData(10f)
+    val highlighterSize: LiveData<Float> get() = _highlighterSize
+
+    private val _usePressure: MutableLiveData<Boolean> = MutableLiveData(true)
+    val usePressure: LiveData<Boolean> get() = _usePressure
+
+    private val _useStylusOnly: MutableLiveData<Boolean> = MutableLiveData(false)
+    val useStylusOnly: LiveData<Boolean> get() = _useStylusOnly
 
     private val _hoverPoint: MutableLiveData<Vector2D?> = MutableLiveData(null)
     val hoverPoint: LiveData<Vector2D?> get() = _hoverPoint
@@ -130,6 +139,13 @@ class WhiteboardViewModel : ViewModel() {
     private val _backgroundColor: MutableLiveData<Int> = MutableLiveData(Color.WHITE)
     val backgroundColor: LiveData<Int> get() = _backgroundColor
 
+    private val _penColor: MutableLiveData<Int> = MutableLiveData(Color.BLACK)
+    val penColor: LiveData<Int> get() = _penColor
+
+    fun setPenColor(color: Int) {
+        _penColor.value = color
+    }
+
     private fun addStroke(stroke: Stroke) {
         saveToUndoStack()
         _strokes.value = _strokes.value?.plus(stroke)
@@ -144,32 +160,57 @@ class WhiteboardViewModel : ViewModel() {
         undo()
     }
 
-    fun startNewStrokeAt(point: Vector2D): Stroke {
+    fun startNewStrokeAt(point: Vector2D, pressure: Float = 1f): Stroke {
         val id = Random.nextLong().toString()
         if (_currentStroke.value != null) {
             completeCurrentStroke()
         }
-        val stroke = Stroke(id, listOf(point), _penSize.value ?: 2f)
+        val tool = _currentTool.value ?: Tool.PEN
+        val isHighlighter = tool == Tool.HIGHLIGHTER
+        val color = if (isHighlighter) {
+            _penColor.value?.let { Color.argb(128, Color.red(it), Color.green(it), Color.blue(it)) } ?: Color.argb(128, 255, 255, 0)
+        } else {
+            _penColor.value ?: Color.BLACK
+        }
+        
+        val width = when(tool) {
+            Tool.PEN -> _penSize.value ?: 2f
+            Tool.HIGHLIGHTER -> _highlighterSize.value ?: 10f
+            else -> 2f
+        }
+
+        val stroke = Stroke(
+            id = id, 
+            points = listOf(point), 
+            width = width,
+            color = color,
+            pressures = listOf(if (_usePressure.value == true) pressure else 1f),
+            isHighlighter = isHighlighter
+        )
         _currentStroke.value = stroke
         return stroke
     }
 
-    fun addPointToCurrentStroke(point: Vector2D) {
+    fun addPointToCurrentStroke(point: Vector2D, pressure: Float = 1f) {
         val currentStroke = _currentStroke.value
         if (currentStroke != null) {
-            _currentStroke.value = Stroke(currentStroke.id, currentStroke.points.plus(point), currentStroke.width)
+            val p = if (_usePressure.value == true) pressure else 1f
+            _currentStroke.value = currentStroke.copy(
+                points = currentStroke.points.plus(point),
+                pressures = currentStroke.pressures?.plus(p) ?: listOf(p)
+            )
         } else {
-            startNewStrokeAt(point)
+            startNewStrokeAt(point, pressure)
         }
     }
 
-    fun completeCurrentStrokeAt(point: Vector2D) {
+    fun completeCurrentStrokeAt(point: Vector2D, pressure: Float = 1f) {
         val currentStroke = _currentStroke.value
         if (currentStroke != null) {
-            addPointToCurrentStroke(point)
+            addPointToCurrentStroke(point, pressure)
             completeCurrentStroke()
         } else {
-            startNewStrokeAt(point)
+            startNewStrokeAt(point, pressure)
             completeCurrentStroke()
         }
     }
@@ -278,6 +319,15 @@ class WhiteboardViewModel : ViewModel() {
         _eraserMode.value = mode
     }
 
+    private var isErasing = false
+    fun startErasing() {
+        isErasing = true
+        saveToUndoStack()
+    }
+    fun stopErasing() {
+        isErasing = false
+    }
+
     fun eraseAt(point: Vector2D) {
         val mode = _eraserMode.value ?: EraserMode.STROKE
         val currentStrokes = _strokes.value ?: return
@@ -287,10 +337,19 @@ class WhiteboardViewModel : ViewModel() {
             EraserMode.STROKE -> {
                 val threshold = size / (viewPort.value?.scale ?: 1f)
                 val newStrokes = currentStrokes.filter { stroke ->
-                    stroke.points.none { p -> p.distanceTo(point) < threshold }
+                    var intersects = false
+                    for (i in 0 until stroke.points.size - 1) {
+                        if (distancePointToSegment(point, stroke.points[i], stroke.points[i+1]) < threshold) {
+                            intersects = true
+                            break
+                        }
+                    }
+                    if (!intersects && stroke.points.isNotEmpty()) {
+                        if (stroke.points.last().distanceTo(point) < threshold) intersects = true
+                    }
+                    !intersects
                 }
                 if (newStrokes.size != currentStrokes.size) {
-                    saveToUndoStack()
                     _strokes.value = newStrokes
                 }
             }
@@ -300,35 +359,41 @@ class WhiteboardViewModel : ViewModel() {
                 var changed = false
                 
                 for (stroke in currentStrokes) {
-                    val segments = mutableListOf<MutableList<Vector2D>>()
-                    var currentSegment = mutableListOf<Vector2D>()
+                    var lastSegmentStart = 0
                     
-                    for (p in stroke.points) {
-                        if (p.distanceTo(point) < threshold) {
-                            if (currentSegment.isNotEmpty()) {
-                                segments.add(currentSegment)
-                                currentSegment = mutableListOf()
+                    for (i in stroke.points.indices) {
+                        // Check if point i is within threshold, OR if any segment connected to it is
+                        val isInside = stroke.points[i].distanceTo(point) < threshold
+                        
+                        if (isInside) {
+                            if (i > lastSegmentStart) {
+                                val segmentPoints = stroke.points.subList(lastSegmentStart, i)
+                                if (segmentPoints.size >= 2) {
+                                    newStrokes.add(stroke.copy(
+                                        id = Random.nextLong().toString(),
+                                        points = segmentPoints.toList(),
+                                        pressures = stroke.pressures?.subList(lastSegmentStart, i)?.toList()
+                                    ))
+                                }
                             }
+                            lastSegmentStart = i + 1
                             changed = true
-                        } else {
-                            currentSegment.add(p)
                         }
                     }
-                    if (currentSegment.isNotEmpty()) {
-                        segments.add(currentSegment)
-                    }
                     
-                    for (segment in segments) {
-                        if (segment.size >= 2) {
-                            newStrokes.add(Stroke(Random.nextLong().toString(), segment, stroke.width))
-                        } else if (segment.size == 1) {
-                            // Keep single points? Maybe not for now.
+                    if (lastSegmentStart < stroke.points.size) {
+                        val segmentPoints = stroke.points.subList(lastSegmentStart, stroke.points.size)
+                        if (segmentPoints.size >= 2) {
+                            newStrokes.add(stroke.copy(
+                                id = Random.nextLong().toString(),
+                                points = segmentPoints.toList(),
+                                pressures = stroke.pressures?.subList(lastSegmentStart, stroke.points.size)?.toList()
+                            ))
                         }
                     }
                 }
                 
                 if (changed) {
-                    saveToUndoStack()
                     _strokes.value = newStrokes
                 }
             }
@@ -360,27 +425,32 @@ class WhiteboardViewModel : ViewModel() {
         var changed = false
         
         for (stroke in currentStrokes) {
-            val segments = mutableListOf<MutableList<Vector2D>>()
-            var currentSegment = mutableListOf<Vector2D>()
-            
-            for (p in stroke.points) {
+            var lastSegmentStart = 0
+            for (i in stroke.points.indices) {
+                val p = stroke.points[i]
                 if (rect.contains(p.x, p.y)) {
-                    if (currentSegment.isNotEmpty()) {
-                        segments.add(currentSegment)
-                        currentSegment = mutableListOf()
+                    if (i > lastSegmentStart) {
+                        val segmentPoints = stroke.points.subList(lastSegmentStart, i)
+                        if (segmentPoints.size >= 2) {
+                            newStrokes.add(stroke.copy(
+                                id = Random.nextLong().toString(),
+                                points = segmentPoints.toList(),
+                                pressures = stroke.pressures?.subList(lastSegmentStart, i)?.toList()
+                            ))
+                        }
                     }
+                    lastSegmentStart = i + 1
                     changed = true
-                } else {
-                    currentSegment.add(p)
                 }
             }
-            if (currentSegment.isNotEmpty()) {
-                segments.add(currentSegment)
-            }
-            
-            for (segment in segments) {
-                if (segment.size >= 2) {
-                    newStrokes.add(Stroke(java.util.UUID.randomUUID().toString(), segment, stroke.width))
+            if (lastSegmentStart < stroke.points.size) {
+                val segmentPoints = stroke.points.subList(lastSegmentStart, stroke.points.size)
+                if (segmentPoints.size >= 2) {
+                    newStrokes.add(stroke.copy(
+                        id = Random.nextLong().toString(),
+                        points = segmentPoints.toList(),
+                        pressures = stroke.pressures?.subList(lastSegmentStart, stroke.points.size)?.toList()
+                    ))
                 }
             }
         }
@@ -400,11 +470,31 @@ class WhiteboardViewModel : ViewModel() {
         _penSize.value = size
     }
 
+    fun setHighlighterSize(size: Float) {
+        _highlighterSize.value = size
+    }
+
+    fun setUsePressure(use: Boolean) {
+        _usePressure.value = use
+    }
+
+    fun setUseStylusOnly(use: Boolean) {
+        _useStylusOnly.value = use
+    }
+
     fun setHoverPoint(point: Vector2D?) {
         _hoverPoint.value = point
     }
 
     fun setCurrentPenPoint(point: Vector2D?) {
         _currentPenPoint.value = point
+    }
+
+    private fun distancePointToSegment(p: Vector2D, a: Vector2D, b: Vector2D): Float {
+        val l2 = (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)
+        if (l2 == 0f) return p.distanceTo(a)
+        var t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2
+        t = Math.max(0f, Math.min(1f, t))
+        return p.distanceTo(Vector2D(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)))
     }
 }

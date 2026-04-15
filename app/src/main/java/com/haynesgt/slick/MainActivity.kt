@@ -21,8 +21,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
-import android.graphics.Color
-import android.graphics.Typeface
+import android.graphics.*
+import android.graphics.pdf.PdfDocument
 import android.graphics.drawable.GradientDrawable
 import android.content.res.ColorStateList
 import androidx.core.graphics.ColorUtils
@@ -184,6 +184,8 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel.setBackgroundColor(sharedPreferences.getInt("background_color", Color.WHITE))
         whiteboardViewModel.setPenSize(sharedPreferences.getFloat("pen_size", 2f))
         whiteboardViewModel.setEraserSize(sharedPreferences.getFloat("eraser_size", 20f))
+        whiteboardViewModel.setUsePressure(sharedPreferences.getBoolean("use_pressure", true))
+        whiteboardViewModel.setUseStylusOnly(sharedPreferences.getBoolean("use_stylus_only", false))
 
         whiteboardViewModel.singleFingerPanEnabled.observe(this) { enabled ->
             sharedPreferences.edit { putBoolean("single_finger_pan", enabled) }
@@ -230,6 +232,12 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel.eraserSize.observe(this) { size ->
             sharedPreferences.edit { putFloat("eraser_size", size) }
         }
+        whiteboardViewModel.usePressure.observe(this) { use ->
+            sharedPreferences.edit { putBoolean("use_pressure", use) }
+        }
+        whiteboardViewModel.useStylusOnly.observe(this) { use ->
+            sharedPreferences.edit { putBoolean("use_stylus_only", use) }
+        }
 
         syncStatusTextView = TextView(this).apply {
             setPadding(16, 16, 16, 16)
@@ -267,50 +275,20 @@ class MainActivity : AppCompatActivity() {
         whiteboardView.onDoubleFingerTap = {
             whiteboardViewModel.undo()
         }
+        whiteboardView.onThreeFingerTap = {
+            whiteboardViewModel.redo()
+        }
         whiteboardView.onSwipeFromEdge = {
             whiteboardViewModel.setControlsVisibility(true)
         }
-        whiteboardView.onPenDown = { point ->
-            whiteboardViewModel.setCurrentPenPoint(point)
-            when (whiteboardViewModel.currentTool.value) {
-                Tool.PEN -> whiteboardViewModel.startNewStrokeAt(point)
-                Tool.ERASER -> {
-                    if (whiteboardViewModel.eraserMode.value == EraserMode.RECTANGLE) {
-                        whiteboardViewModel.startEraserRect(point)
-                    } else {
-                        whiteboardViewModel.eraseAt(point)
-                    }
-                }
-                null -> {}
-            }
+        whiteboardView.onPenDown = { _ ->
+            whiteboardViewModel.setCurrentPenPoint(null)
         }
         whiteboardView.onPenMove = { point ->
             whiteboardViewModel.setCurrentPenPoint(point)
-            when (whiteboardViewModel.currentTool.value) {
-                Tool.PEN -> whiteboardViewModel.addPointToCurrentStroke(point)
-                Tool.ERASER -> {
-                    if (whiteboardViewModel.eraserMode.value == EraserMode.RECTANGLE) {
-                        whiteboardViewModel.updateEraserRect(point)
-                    } else {
-                        whiteboardViewModel.eraseAt(point)
-                    }
-                }
-                null -> {}
-            }
         }
-        whiteboardView.onPenUp = { point ->
+        whiteboardView.onPenUp = { _ ->
             whiteboardViewModel.setCurrentPenPoint(null)
-            when (whiteboardViewModel.currentTool.value) {
-                Tool.PEN -> whiteboardViewModel.completeCurrentStrokeAt(point)
-                Tool.ERASER -> {
-                    if (whiteboardViewModel.eraserMode.value == EraserMode.RECTANGLE) {
-                        whiteboardViewModel.completeEraserRect()
-                    } else {
-                        whiteboardViewModel.eraseAt(point)
-                    }
-                }
-                null -> {}
-            }
         }
 
         val documentsButton = Button(this).apply {
@@ -336,6 +314,10 @@ class MainActivity : AppCompatActivity() {
                     isCheckable = true
                     isChecked = whiteboardViewModel.controlsLocked.value ?: false
                 }
+                val stylusOnlyItem = popup.menu.add("Stylus Only Mode").apply {
+                    isCheckable = true
+                    isChecked = whiteboardViewModel.useStylusOnly.value ?: false
+                }
                 val account = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
                 val syncItem = if (account != null) {
                     popup.menu.add("Change Account (${account.email})")
@@ -344,14 +326,17 @@ class MainActivity : AppCompatActivity() {
                 }
                 val gridSettingsItem = popup.menu.add("Grid Settings...")
                 val bgSettingsItem = popup.menu.add("Background Color...")
+                val exportPdfItem = popup.menu.add("Export as PDF...")
 
                 popup.setOnMenuItemClickListener { item ->
                     when (item) {
                         panItem -> whiteboardViewModel.setSingleFingerPanEnabled(!item.isChecked)
                         invertItem -> whiteboardViewModel.setInvertColors(!item.isChecked)
                         lockItem -> whiteboardViewModel.setControlsLocked(!item.isChecked)
+                        stylusOnlyItem -> whiteboardViewModel.setUseStylusOnly(!item.isChecked)
                         gridSettingsItem -> showGridSettingsDialog()
                         bgSettingsItem -> showBackgroundSettingsDialog()
+                        exportPdfItem -> showExportPdfDialog(whiteboardView)
                         syncItem -> {
                             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                                 .requestEmail()
@@ -409,6 +394,10 @@ class MainActivity : AppCompatActivity() {
                 text = "Pen"
                 setOnClickListener { whiteboardViewModel.setCurrentTool(Tool.PEN) }
             }
+            val highlighterBtn = Button(this@MainActivity).apply {
+                text = "Highlighter"
+                setOnClickListener { whiteboardViewModel.setCurrentTool(Tool.HIGHLIGHTER) }
+            }
             val eraserBtn = Button(this@MainActivity).apply {
                 text = "Eraser"
                 setOnClickListener { whiteboardViewModel.setCurrentTool(Tool.ERASER) }
@@ -422,12 +411,14 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener { whiteboardViewModel.redo() }
             }
             addView(penBtn)
+            addView(highlighterBtn)
             addView(eraserBtn)
             addView(undoBtn)
             addView(redoBtn)
 
             whiteboardViewModel.currentTool.observe(this@MainActivity) { tool ->
                 penBtn.setTypeface(null, if (tool == Tool.PEN) Typeface.BOLD else Typeface.NORMAL)
+                highlighterBtn.setTypeface(null, if (tool == Tool.HIGHLIGHTER) Typeface.BOLD else Typeface.NORMAL)
                 eraserBtn.setTypeface(null, if (tool == Tool.ERASER) Typeface.BOLD else Typeface.NORMAL)
             }
         }
@@ -501,20 +492,29 @@ class MainActivity : AppCompatActivity() {
                     setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                         override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
                             if (!f) return
-                            val isEraser = whiteboardViewModel.currentTool.value == Tool.ERASER
+                            val tool = whiteboardViewModel.currentTool.value ?: Tool.PEN
+                            val isEraser = tool == Tool.ERASER
                             val minVal = if (isEraser) 1f else 0.1f
                             val maxVal = if (isEraser) 500f else 100f
                             // Exponential: min * (max/min)^(p/max_p)
                             val size = minVal * Math.pow((maxVal / minVal).toDouble(), (p / 1000.0)).toFloat()
-                            if (isEraser) {
-                                whiteboardViewModel.setEraserSize(size)
-                            } else {
-                                whiteboardViewModel.setPenSize(size)
+                            when (tool) {
+                                Tool.ERASER -> whiteboardViewModel.setEraserSize(size)
+                                Tool.HIGHLIGHTER -> whiteboardViewModel.setHighlighterSize(size)
+                                Tool.PEN -> whiteboardViewModel.setPenSize(size)
                             }
                         }
                         override fun onStartTrackingTouch(s: SeekBar?) {}
                         override fun onStopTrackingTouch(s: SeekBar?) {}
                     })
+                }
+
+                val pressureSwitch = CheckBox(this@MainActivity).apply {
+                    text = "Pressure"
+                    setTextColor(Color.WHITE)
+                    setOnCheckedChangeListener { _, isChecked ->
+                        whiteboardViewModel.setUsePressure(isChecked)
+                    }
                 }
 
                 fun updateSlider(tool: Tool?, size: Float) {
@@ -523,12 +523,17 @@ class MainActivity : AppCompatActivity() {
                     val maxVal = if (isEraser) 500f else 100f
                     val progress = (1000 * Math.log((size / minVal).toDouble()) / Math.log((maxVal / minVal).toDouble())).toInt()
                     sizeSlider.progress = progress
-                    sizeLabel.text = "${if (isEraser) "Eraser" else "Pen"} Size: %.1f".format(size)
+                    sizeLabel.text = "${tool?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Pen"} Size: %.1f".format(size)
                 }
 
                 whiteboardViewModel.currentTool.observe(this@MainActivity) { tool ->
                     eraserOptions.visibility = if (tool == Tool.ERASER) View.VISIBLE else View.GONE
-                    val size = if (tool == Tool.ERASER) whiteboardViewModel.eraserSize.value ?: 20f else whiteboardViewModel.penSize.value ?: 2f
+                    pressureSwitch.visibility = if (tool == Tool.ERASER) View.GONE else View.VISIBLE
+                    val size = when (tool) {
+                        Tool.ERASER -> whiteboardViewModel.eraserSize.value ?: 20f
+                        Tool.HIGHLIGHTER -> whiteboardViewModel.highlighterSize.value ?: 10f
+                        else -> whiteboardViewModel.penSize.value ?: 2f
+                    }
                     updateSlider(tool, size)
                 }
                 whiteboardViewModel.eraserSize.observe(this@MainActivity) { size ->
@@ -537,9 +542,16 @@ class MainActivity : AppCompatActivity() {
                 whiteboardViewModel.penSize.observe(this@MainActivity) { size ->
                     if (whiteboardViewModel.currentTool.value == Tool.PEN) updateSlider(Tool.PEN, size)
                 }
+                whiteboardViewModel.highlighterSize.observe(this@MainActivity) { size ->
+                    if (whiteboardViewModel.currentTool.value == Tool.HIGHLIGHTER) updateSlider(Tool.HIGHLIGHTER, size)
+                }
+                whiteboardViewModel.usePressure.observe(this@MainActivity) { use ->
+                    pressureSwitch.isChecked = use
+                }
 
                 addView(sizeLabel)
                 addView(sizeSlider)
+                addView(pressureSwitch)
             }
             addView(sizeContainer)
         }
@@ -1196,31 +1208,127 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun restoreFromHistory(originalFileName: String, driveFileId: String, driveFileName: String) {
-        val progressDialog = AlertDialog.Builder(this)
-            .setMessage("Restoring version...")
-            .setCancelable(false)
-            .show()
+        // ...
+    }
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val tempFile = File(cacheDir, driveFileName)
-                googleDriveSyncService.downloadFile(driveFileId, tempFile)
-                
-                val (strokes, viewPort) = drawingBoardSvgService.loadStrokesFromFile(tempFile)
-                
-                runOnUiThread {
-                    whiteboardViewModel.setFileName(originalFileName)
-                    whiteboardViewModel.setStrokes(strokes)
-                    whiteboardViewModel.setViewPort(viewPort)
-                    progressDialog.dismiss()
-                    Toast.makeText(this@MainActivity, "Version restored", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    progressDialog.dismiss()
-                    Toast.makeText(this@MainActivity, "Restore failed: ${e.message}", Toast.LENGTH_LONG).show()
+    private fun showExportPdfDialog(whiteboardView: WhiteboardSurfaceView) {
+        val options = arrayOf("Current View", "Whole Board")
+        AlertDialog.Builder(this)
+            .setTitle("Export as PDF")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> exportToPdf(whiteboardView, exportWholeBoard = false)
+                    1 -> exportToPdf(whiteboardView, exportWholeBoard = true)
                 }
             }
+            .show()
+    }
+
+    private fun exportToPdf(whiteboardView: WhiteboardSurfaceView, exportWholeBoard: Boolean) {
+        val fileName = whiteboardViewModel.fileName.value?.removeSuffix(".svg") ?: "export"
+        val pdfFile = File(getExternalFilesDir(null), "$fileName.pdf")
+        
+        val pdfDocument = PdfDocument()
+        
+        val strokes = whiteboardViewModel.strokes.value ?: emptyList()
+        val backgroundColor = whiteboardViewModel.backgroundColor.value ?: Color.WHITE
+        
+        val rect = if (exportWholeBoard && strokes.isNotEmpty()) {
+            var minX = Float.MAX_VALUE
+            var minY = Float.MAX_VALUE
+            var maxX = Float.MIN_VALUE
+            var maxY = Float.MIN_VALUE
+            strokes.forEach { stroke ->
+                stroke.points.forEach { p ->
+                    minX = minOf(minX, p.x)
+                    minY = minOf(minY, p.y)
+                    maxX = maxOf(maxX, p.x)
+                    maxY = maxOf(maxY, p.y)
+                }
+            }
+            // Add some padding
+            val padding = 50f
+            RectF(minX - padding, minY - padding, maxX + padding, maxY + padding)
+        } else {
+            // Use current view bounds
+            val viewPort = whiteboardViewModel.viewPort.value ?: ViewPort(1f, 0f, 0f)
+            val left = -viewPort.offsetX / viewPort.scale
+            val top = -viewPort.offsetY / viewPort.scale
+            val right = left + whiteboardView.width / viewPort.scale
+            val bottom = top + whiteboardView.height / viewPort.scale
+            RectF(left, top, right, bottom)
+        }
+
+        val pageInfo = PdfDocument.PageInfo.Builder(rect.width().toInt(), rect.height().toInt(), 1).create()
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas = page.canvas
+
+        // Draw background
+        canvas.drawColor(backgroundColor)
+        
+        // Translate to match our bounds
+        canvas.translate(-rect.left, -rect.top)
+        
+        // Draw strokes (similar logic to WhiteboardSurfaceView but direct to canvas)
+        val paint = Paint().apply {
+            style = Paint.Style.STROKE
+            isAntiAlias = true
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+
+        strokes.forEach { stroke ->
+            paint.color = stroke.color
+            paint.strokeWidth = stroke.width
+            if (stroke.isHighlighter) {
+                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
+            } else {
+                paint.xfermode = null
+            }
+
+            if (stroke.pressures != null && stroke.pressures.size == stroke.points.size) {
+                for (i in 0 until stroke.points.size - 1) {
+                    val p1 = stroke.points[i]
+                    val p2 = stroke.points[i+1]
+                    val pr1 = stroke.pressures[i]
+                    val pr2 = stroke.pressures[i+1]
+                    paint.strokeWidth = stroke.width * (pr1 + pr2) / 2f
+                    canvas.drawLine(p1.x, p1.y, p2.x, p2.y, paint)
+                }
+            } else {
+                val path = Path()
+                if (stroke.points.isNotEmpty()) {
+                    path.moveTo(stroke.points[0].x, stroke.points[0].y)
+                    for (i in 1 until stroke.points.size) {
+                        path.lineTo(stroke.points[i].x, stroke.points[i].y)
+                    }
+                    canvas.drawPath(path, paint)
+                }
+            }
+        }
+
+        pdfDocument.finishPage(page)
+
+        try {
+            pdfFile.outputStream().use { 
+                pdfDocument.writeTo(it)
+            }
+            Toast.makeText(this, "PDF saved to ${pdfFile.absolutePath}", Toast.LENGTH_LONG).show()
+            
+            // Trigger media scan or share
+            val sendThingsService = SendThingsService()
+            sendThingsService.sendData(pdfFile, this, this)
+            
+            // Sync to Google Drive
+            lifecycleScope.launch(Dispatchers.IO) {
+                googleDriveSyncService.syncFile(pdfFile, "SlickPDFs")
+            }
+            
+        } catch (e: Exception) {
+            Log.e("Slick", "Error exporting PDF", e)
+            Toast.makeText(this, "Failed to export PDF", Toast.LENGTH_SHORT).show()
+        } finally {
+            pdfDocument.close()
         }
     }
 }

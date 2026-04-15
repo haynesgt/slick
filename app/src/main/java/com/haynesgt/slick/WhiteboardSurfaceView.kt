@@ -102,8 +102,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                     }
                     canvas.save()
                     canvas.concat(drawMatrix)
-                    paint.strokeWidth = param.width
-                    drawSingleStroke(canvas, param.points)
+                    drawSingleStroke(canvas, param)
                 } finally {
                     canvas.restoreToCount(saveCount)
                 }
@@ -127,6 +126,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     var onDown: (() -> Unit)? = null
     var onDoubleTapped: (() -> Unit)? = null
     var onDoubleFingerTap: (() -> Unit)? = null
+    var onThreeFingerTap: (() -> Unit)? = null
     var onSwipeFromEdge: (() -> Unit)? = null
     var onPenDown: ((Vector2D) -> Unit)? = null
     var onPenMove: ((Vector2D) -> Unit)? = null
@@ -335,6 +335,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     }
 
     private var lastTwoFingerDownTime = 0L
+    private var lastThreeFingerDownTime = 0L
 
     init {
         holder?.addCallback(this)
@@ -382,23 +383,66 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             }
             lastTwoFingerDownTime = time
         }
+        
+        // Three finger tap detection
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount == 3) {
+            val time = System.currentTimeMillis()
+            if (time - lastThreeFingerDownTime < 300) {
+                onThreeFingerTap?.invoke()
+            }
+            lastThreeFingerDownTime = time
+        }
 
         scaleGestureDetector.onTouchEvent(event)
         if (gestureDetector.onTouchEvent(event)) { return true }
         
         // stylus events for drawing
-        if (event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
+        val isStylus = event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS
+        val useStylusOnly = viewModel.useStylusOnly.value ?: false
+        
+        if (isStylus || (!useStylusOnly && !viewModel.singleFingerPanEnabled.value!!)) {
             val canvasPoint = screenToCanvas(event.x, event.y)
-            when (event.action) {
+            val pressure = event.pressure
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    onPenDown?.invoke(canvasPoint)
-                    setHoverPoint(null)
+                    if (viewModel.currentTool.value == Tool.ERASER) {
+                        viewModel.startErasing()
+                        if (viewModel.eraserMode.value == EraserMode.RECTANGLE) {
+                            viewModel.startEraserRect(canvasPoint)
+                        } else {
+                            viewModel.eraseAt(canvasPoint)
+                        }
+                    } else {
+                        viewModel.startNewStrokeAt(canvasPoint, pressure)
+                    }
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    onPenMove?.invoke(canvasPoint)
+                    if (viewModel.currentTool.value == Tool.ERASER) {
+                        if (viewModel.eraserMode.value == EraserMode.RECTANGLE) {
+                            viewModel.updateEraserRect(canvasPoint)
+                        } else {
+                            viewModel.eraseAt(canvasPoint)
+                        }
+                    } else {
+                        // Handle historical points for smoother pressure/path
+                        for (i in 0 until event.historySize) {
+                            val hx = event.getHistoricalX(i)
+                            val hy = event.getHistoricalY(i)
+                            val hp = event.getHistoricalPressure(i)
+                            viewModel.addPointToCurrentStroke(screenToCanvas(hx, hy), hp)
+                        }
+                        viewModel.addPointToCurrentStroke(canvasPoint, pressure)
+                    }
                 }
                 MotionEvent.ACTION_UP -> {
-                    onPenUp?.invoke(canvasPoint)
+                    if (viewModel.currentTool.value == Tool.ERASER) {
+                        if (viewModel.eraserMode.value == EraserMode.RECTANGLE) {
+                            viewModel.completeEraserRect()
+                        }
+                        viewModel.stopErasing()
+                    } else {
+                        viewModel.completeCurrentStrokeAt(canvasPoint, pressure)
+                    }
                 }
             }
             return true
@@ -407,10 +451,10 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     }
 
     override fun onHoverEvent(event: MotionEvent): Boolean {
-        if (event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
+        if (event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS || !viewModel.singleFingerPanEnabled.value!!) {
             val canvasPoint = screenToCanvas(event.x, event.y)
-            when (event.action) {
-                MotionEvent.ACTION_HOVER_MOVE -> {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_MOVE -> {
                     setHoverPoint(canvasPoint)
                 }
                 MotionEvent.ACTION_HOVER_EXIT -> {
@@ -425,6 +469,9 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     private fun setHoverPoint(point: Vector2D?) {
         if (::viewModel.isInitialized) {
             viewModel.setHoverPoint(point)
+            if (holder.surface.isValid) {
+                renderer.commit()
+            }
         }
     }
 
@@ -444,14 +491,12 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             }
 
             for (stroke in strokes) {
-                paint.strokeWidth = stroke.width
-                drawSingleStroke(canvas, stroke.points)
+                drawSingleStroke(canvas, stroke)
             }
             // Also draw the active stroke if it exists, so it stays visible during zoom/pan
             if (::viewModel.isInitialized) {
                 viewModel.currentStroke.value?.let { current ->
-                    paint.strokeWidth = current.width
-                    drawSingleStroke(canvas, current.points)
+                    drawSingleStroke(canvas, current)
                 }
             }
 
@@ -467,6 +512,8 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                 }
 
                 val indicatorPoint = viewModel.hoverPoint.value ?: viewModel.currentPenPoint.value
+                val isDrawing = viewModel.currentStroke.value != null
+                
                 if (indicatorPoint != null) {
                     if (viewModel.currentTool.value == Tool.ERASER && viewModel.eraserMode.value != EraserMode.RECTANGLE) {
                         val size = viewModel.eraserSize.value ?: 20f
@@ -477,10 +524,19 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                             alpha = 128
                         }
                         canvas.drawCircle(indicatorPoint.x, indicatorPoint.y, size / scaleFactor, hoverPaint)
-                    } else if (viewModel.currentTool.value == Tool.PEN) {
+                    } else if (viewModel.currentTool.value == Tool.PEN && !isDrawing) {
                         val size = (viewModel.penSize.value ?: 2f) / 2f
                         val hoverPaint = Paint().apply {
                             color = Color.BLUE
+                            style = Paint.Style.STROKE
+                            strokeWidth = 1f / scaleFactor
+                            alpha = 128
+                        }
+                        canvas.drawCircle(indicatorPoint.x, indicatorPoint.y, size, hoverPaint)
+                    } else if (viewModel.currentTool.value == Tool.HIGHLIGHTER && !isDrawing) {
+                        val size = (viewModel.highlighterSize.value ?: 10f) / 2f
+                        val hoverPaint = Paint().apply {
+                            color = Color.YELLOW
                             style = Paint.Style.STROKE
                             strokeWidth = 1f / scaleFactor
                             alpha = 128
@@ -534,31 +590,70 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         }
     }
 
-    private fun drawSingleStroke(canvas: Canvas, points: List<Vector2D>) {
+    private fun drawSingleStroke(canvas: Canvas, stroke: Stroke) {
+        val points = stroke.points
+        val pressures = stroke.pressures
         if (points.size < 2) {
             return
         }
-        val path = Path()
-        path.moveTo(points[0].x, points[0].y)
 
-        for (i in 1 until points.size) {
-            val p1 = points[i - 1]
-            val p2 = points[i]
+        val originalStrokeWidth = paint.strokeWidth
+        val originalColor = paint.color
+        val originalAlpha = paint.alpha
+        val originalXfermode = paint.xfermode
+        val originalCap = paint.strokeCap
+        val originalJoin = paint.strokeJoin
 
-            // Use a quadratic Bezier curve for smoothing between midpoints
-            val midX = (p1.x + p2.x) / 2
-            val midY = (p1.y + p2.y) / 2
-
-            if (i == 1) {
-                path.lineTo(midX, midY)
-            } else {
-                path.quadTo(p1.x, p1.y, midX, midY)
-            }
+        paint.color = stroke.color
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeJoin = Paint.Join.ROUND
+        
+        if (stroke.isHighlighter) {
+            paint.xfermode = android.graphics.PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
+        } else {
+            paint.xfermode = null
         }
 
-        // Connect to the final point
-        path.lineTo(points.last().x, points.last().y)
+        if (pressures != null && pressures.size == points.size) {
+            // Draw segment by segment for variable width
+            for (i in 0 until points.size - 1) {
+                val p1 = points[i]
+                val p2 = points[i + 1]
+                val pr1 = pressures[i]
+                val pr2 = pressures[i + 1]
+                
+                val avgPressure = (pr1 + pr2) / 2f
+                paint.strokeWidth = stroke.width * avgPressure
+                canvas.drawLine(p1.x, p1.y, p2.x, p2.y, paint)
+            }
+        } else {
+            paint.strokeWidth = stroke.width
+            val path = Path()
+            path.moveTo(points[0].x, points[0].y)
 
-        canvas.drawPath(path, paint)
+            for (i in 1 until points.size) {
+                val p1 = points[i - 1]
+                val p2 = points[i]
+
+                val midX = (p1.x + p2.x) / 2
+                val midY = (p1.y + p2.y) / 2
+
+                if (i == 1) {
+                    path.lineTo(midX, midY)
+                } else {
+                    path.quadTo(p1.x, p1.y, midX, midY)
+                }
+            }
+            path.lineTo(points.last().x, points.last().y)
+            canvas.drawPath(path, paint)
+        }
+
+        // Restore paint state
+        paint.strokeWidth = originalStrokeWidth
+        paint.color = originalColor
+        paint.alpha = originalAlpha
+        paint.xfermode = originalXfermode
+        paint.strokeCap = originalCap
+        paint.strokeJoin = originalJoin
     }
 }

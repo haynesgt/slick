@@ -174,7 +174,14 @@ class DrawingBoardSvgService(private val context: Context) {
                             }
                             
                             val id = parser.getAttributeValue(null, "id")
-                            strokes.add(Stroke(id, points, strokeWidth))
+                            val colorStr = parser.getAttributeValue(null, "stroke") ?: "#000000"
+                            val color = try { android.graphics.Color.parseColor(colorStr) } catch(e: Exception) { android.graphics.Color.BLACK }
+                            val isHighlighter = parser.getAttributeValue(null, "slick:isHighlighter") == "true"
+                            
+                            val pressuresStr = parser.getAttributeValue(null, "slick:pressures")
+                            val pressures = pressuresStr?.split(",")?.mapNotNull { it.toFloatOrNull() }
+
+                            strokes.add(Stroke(id, points, strokeWidth, color, pressures, isHighlighter))
                         }
                     }
                     eventType = parser.next()
@@ -262,7 +269,11 @@ class DrawingBoardSvgService(private val context: Context) {
                         }
                         d.append(" L${points.last().x},${points.last().y}")
 
-                        writer.write("  <path fill=\"none\" stroke=\"black\" stroke-width=\"${stroke.width}\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"$d\" />\n")
+                        val colorStr = String.format("#%06X", (0xFFFFFF and stroke.color))
+                        val isHighlighterAttr = if (stroke.isHighlighter) " slick:isHighlighter=\"true\"" else ""
+                        val pressuresAttr = if (stroke.pressures != null) " slick:pressures=\"${stroke.pressures.joinToString(",")}\"" else ""
+
+                        writer.write("  <path fill=\"none\" stroke=\"$colorStr\" stroke-width=\"${stroke.width}\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"$d\"$isHighlighterAttr$pressuresAttr />\n")
                     }
                     writer.write("</svg>")
                 }

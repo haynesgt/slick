@@ -68,7 +68,7 @@ class GoogleDriveSyncService(private val context: Context) {
         initializeDriveService()
     }
 
-    suspend fun syncFile(file: File, folderName: String = this.folderName) = withContext(Dispatchers.IO) {
+    suspend fun syncFile(file: File, folderName: String = this.folderName, mimeType: String? = null) = withContext(Dispatchers.IO) {
         if (driveService == null) {
             initializeDriveService()
             if (driveService == null) {
@@ -86,7 +86,12 @@ class GoogleDriveSyncService(private val context: Context) {
                 .setName(file.name)
                 .setParents(Collections.singletonList(folderId))
 
-            val content = FileContent("image/svg+xml", file)
+            val effectiveMimeType = mimeType ?: when (file.extension.lowercase()) {
+                "pdf" -> "application/pdf"
+                "svg" -> "image/svg+xml"
+                else -> "application/octet-stream"
+            }
+            val content = FileContent(effectiveMimeType, file)
 
             if (driveFileId == null) {
                 driveService!!.files().create(metadata, content).execute()
