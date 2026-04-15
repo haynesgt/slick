@@ -178,8 +178,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         whiteboardViewModel.setSingleFingerPanEnabled(sharedPreferences.getBoolean("single_finger_pan", true))
-        whiteboardViewModel.setInvertColors(sharedPreferences.getBoolean("invert_colors", false))
-        whiteboardViewModel.setControlsLocked(sharedPreferences.getBoolean("controls_locked", false))
+        val isDarkMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        whiteboardViewModel.setInvertColors(sharedPreferences.getBoolean("invert_colors", isDarkMode))
+        whiteboardViewModel.setControlsLocked(sharedPreferences.getBoolean("controls_locked", true))
         whiteboardViewModel.setShowGrid(sharedPreferences.getBoolean("show_grid", false))
         whiteboardViewModel.setShowGridHorizontal(sharedPreferences.getBoolean("show_grid_horizontal", true))
         whiteboardViewModel.setShowGridVertical(sharedPreferences.getBoolean("show_grid_vertical", false))
@@ -192,7 +193,7 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel.setBackgroundColor(sharedPreferences.getInt("background_color", Color.WHITE))
         whiteboardViewModel.setPenSize(sharedPreferences.getFloat("pen_size", 2f))
         whiteboardViewModel.setEraserSize(sharedPreferences.getFloat("eraser_size", 20f))
-        whiteboardViewModel.setUsePressure(sharedPreferences.getBoolean("use_pressure", true))
+        whiteboardViewModel.setUsePressure(sharedPreferences.getBoolean("use_pressure", false))
         whiteboardViewModel.setUseStylusOnly(sharedPreferences.getBoolean("use_stylus_only", false))
 
         whiteboardViewModel.singleFingerPanEnabled.observe(this) { enabled ->

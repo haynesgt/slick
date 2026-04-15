@@ -69,7 +69,7 @@ class WhiteboardViewModel : ViewModel() {
     private val _highlighterSize: MutableLiveData<Float> = MutableLiveData(10f)
     val highlighterSize: LiveData<Float> get() = _highlighterSize
 
-    private val _usePressure: MutableLiveData<Boolean> = MutableLiveData(true)
+    private val _usePressure: MutableLiveData<Boolean> = MutableLiveData(false)
     val usePressure: LiveData<Boolean> get() = _usePressure
 
     private val _useStylusOnly: MutableLiveData<Boolean> = MutableLiveData(false)
@@ -104,7 +104,7 @@ class WhiteboardViewModel : ViewModel() {
     private val _invertColors: MutableLiveData<Boolean> = MutableLiveData(false)
     val invertColors: LiveData<Boolean> get() = _invertColors
 
-    private val _controlsLocked: MutableLiveData<Boolean> = MutableLiveData(false)
+    private val _controlsLocked: MutableLiveData<Boolean> = MutableLiveData(true)
     val controlsLocked: LiveData<Boolean> get() = _controlsLocked
 
     private val _showGrid: MutableLiveData<Boolean> = MutableLiveData(false)

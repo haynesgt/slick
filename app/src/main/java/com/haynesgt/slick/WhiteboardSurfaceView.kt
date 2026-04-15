@@ -243,16 +243,31 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         }
     }
 
+    private fun isStylus(event: MotionEvent?): Boolean {
+        if (event == null) return false
+        for (i in 0 until event.pointerCount) {
+            if (event.getToolType(i) == MotionEvent.TOOL_TYPE_STYLUS) return true
+        }
+        return false
+    }
+
+    private fun getStylusPointerIndex(event: MotionEvent): Int {
+        for (i in 0 until event.pointerCount) {
+            if (event.getToolType(i) == MotionEvent.TOOL_TYPE_STYLUS) return i
+        }
+        return 0
+    }
+
     private val gestureDetector: GestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-            if  (e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
+            if  (isStylus(e)) {
                 return false
             }
             onTapped?.invoke()
             return true
         }
         override fun  onDoubleTap(e: MotionEvent): Boolean {
-            if  (e.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
+            if  (isStylus(e)) {
                 return false
             }
             onDoubleTapped?.invoke()
@@ -265,6 +280,11 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             distanceX: Float,
             distanceY: Float
         ): Boolean {
+            // If the pen is involved at all, don't scroll
+            if (isStylus(e1) || isStylus(e2)) {
+                return false
+            }
+
             if (e1 != null) {
                 val edgeThreshold = 30
                 val isFromLeft = e1.x < edgeThreshold
@@ -279,7 +299,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             }
 
             val isSingleFinger = e2.pointerCount == 1
-            val isStylus = e2.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS
+            val isStylus = isStylus(e2)
             val canPanWithSingleFinger = viewModel.singleFingerPanEnabled.value ?: true
 
             if (e2.pointerCount > 1 || (isSingleFinger && !isStylus && canPanWithSingleFinger)) {
@@ -319,7 +339,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             }
             return true
         }
-    })
+    }).apply { isQuickScaleEnabled = false }
 
     private fun updateMatrices() {
         drawMatrix.reset()
@@ -398,23 +418,28 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         if (gestureDetector.onTouchEvent(event)) { return true }
         
         // stylus events for drawing
-        val isStylus = event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS
+        val isStylus = isStylus(event)
         val useStylusOnly = viewModel.useStylusOnly.value ?: false
         
         if (isStylus || (!useStylusOnly && !viewModel.singleFingerPanEnabled.value!!)) {
-            val canvasPoint = screenToCanvas(event.x, event.y)
-            val pressure = event.pressure
+            val stylusIndex = if (isStylus) getStylusPointerIndex(event) else 0
+            val canvasPoint = screenToCanvas(event.getX(stylusIndex), event.getY(stylusIndex))
+            val pressure = event.getPressure(stylusIndex)
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    if (viewModel.currentTool.value == Tool.ERASER) {
-                        viewModel.startErasing()
-                        if (viewModel.eraserMode.value == EraserMode.RECTANGLE) {
-                            viewModel.startEraserRect(canvasPoint)
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                    // Only start new stroke if the pointer that went down is the stylus
+                    val actionIndex = event.actionIndex
+                    if (event.getToolType(actionIndex) == MotionEvent.TOOL_TYPE_STYLUS || !isStylus) {
+                        if (viewModel.currentTool.value == Tool.ERASER) {
+                            viewModel.startErasing()
+                            if (viewModel.eraserMode.value == EraserMode.RECTANGLE) {
+                                viewModel.startEraserRect(canvasPoint)
+                            } else {
+                                viewModel.eraseAt(canvasPoint)
+                            }
                         } else {
-                            viewModel.eraseAt(canvasPoint)
+                            viewModel.startNewStrokeAt(canvasPoint, pressure)
                         }
-                    } else {
-                        viewModel.startNewStrokeAt(canvasPoint, pressure)
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -429,8 +454,8 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                         val points = mutableListOf<Vector2D>()
                         val pressures = mutableListOf<Float>()
                         for (i in 0 until event.historySize) {
-                            points.add(screenToCanvas(event.getHistoricalX(i), event.getHistoricalY(i)))
-                            pressures.add(event.getHistoricalPressure(i))
+                            points.add(screenToCanvas(event.getHistoricalX(stylusIndex, i), event.getHistoricalY(stylusIndex, i)))
+                            pressures.add(event.getHistoricalPressure(stylusIndex, i))
                         }
                         points.add(canvasPoint)
                         pressures.add(pressure)
@@ -443,15 +468,18 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                         }
                     }
                 }
-                MotionEvent.ACTION_UP -> {
-                    if (viewModel.currentTool.value == Tool.ERASER) {
-                        if (viewModel.eraserMode.value == EraserMode.RECTANGLE) {
-                            viewModel.completeEraserRect()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                    val actionIndex = event.actionIndex
+                    if (event.getToolType(actionIndex) == MotionEvent.TOOL_TYPE_STYLUS || !isStylus) {
+                        if (viewModel.currentTool.value == Tool.ERASER) {
+                            if (viewModel.eraserMode.value == EraserMode.RECTANGLE) {
+                                viewModel.completeEraserRect()
+                            }
+                            viewModel.stopErasing()
+                        } else {
+                            viewModel.completeCurrentStrokeAt(canvasPoint, pressure)
+                            renderer.commit()
                         }
-                        viewModel.stopErasing()
-                    } else {
-                        viewModel.completeCurrentStrokeAt(canvasPoint, pressure)
-                        renderer.commit()
                     }
                 }
             }
@@ -461,8 +489,9 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
     }
 
     override fun onHoverEvent(event: MotionEvent): Boolean {
-        if (event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS || !viewModel.singleFingerPanEnabled.value!!) {
-            val canvasPoint = screenToCanvas(event.x, event.y)
+        if (isStylus(event) || !viewModel.singleFingerPanEnabled.value!!) {
+            val stylusIndex = getStylusPointerIndex(event)
+            val canvasPoint = screenToCanvas(event.getX(stylusIndex), event.getY(stylusIndex))
             when (event.actionMasked) {
                 MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_MOVE -> {
                     setHoverPoint(canvasPoint)
