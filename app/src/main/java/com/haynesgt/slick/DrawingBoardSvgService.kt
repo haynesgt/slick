@@ -93,7 +93,8 @@ class DrawingBoardSvgService(private val context: Context) {
         val folder = File(context.filesDir, folderName)
         if (!folder.exists()) folder.mkdirs()
 
-        val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.svg"
+        val originalName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.svg"
+        val fileName = getUniqueFileName(originalName)
         val targetFile = File(folder, fileName)
 
         try {
@@ -107,6 +108,21 @@ class DrawingBoardSvgService(private val context: Context) {
             Log.e("Slick", "Error importing file from $uri", e)
             return null
         }
+    }
+
+    private fun getUniqueFileName(baseName: String): String {
+        val folder = File(context.filesDir, folderName)
+        val nameWithoutExtension = baseName.removeSuffix(".svg")
+        val extension = ".svg"
+        
+        var fileName = baseName
+        var counter = 1
+        
+        while (File(folder, fileName).exists()) {
+            fileName = "$nameWithoutExtension ($counter)$extension"
+            counter++
+        }
+        return fileName
     }
 
     private fun getFileNameFromUri(uri: android.net.Uri): String? {
