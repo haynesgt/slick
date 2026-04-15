@@ -24,6 +24,7 @@ import androidx.appcompat.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.content.res.ColorStateList
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -166,6 +167,8 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel.setGridColor(sharedPreferences.getInt("grid_color", Color.LTGRAY))
         whiteboardViewModel.setGridThickness(sharedPreferences.getFloat("grid_thickness", 1f))
         whiteboardViewModel.setBackgroundColor(sharedPreferences.getInt("background_color", Color.WHITE))
+        whiteboardViewModel.setPenSize(sharedPreferences.getFloat("pen_size", 2f))
+        whiteboardViewModel.setEraserSize(sharedPreferences.getFloat("eraser_size", 20f))
 
         whiteboardViewModel.singleFingerPanEnabled.observe(this) { enabled ->
             sharedPreferences.edit { putBoolean("single_finger_pan", enabled) }
@@ -206,6 +209,12 @@ class MainActivity : AppCompatActivity() {
         whiteboardViewModel.backgroundColor.observe(this) { color ->
             sharedPreferences.edit { putInt("background_color", color) }
         }
+        whiteboardViewModel.penSize.observe(this) { size ->
+            sharedPreferences.edit { putFloat("pen_size", size) }
+        }
+        whiteboardViewModel.eraserSize.observe(this) { size ->
+            sharedPreferences.edit { putFloat("eraser_size", size) }
+        }
 
         syncStatusTextView = TextView(this).apply {
             setPadding(16, 16, 16, 16)
@@ -244,13 +253,46 @@ class MainActivity : AppCompatActivity() {
             whiteboardViewModel.setControlsVisibility(true)
         }
         whiteboardView.onPenDown = { point ->
-            whiteboardViewModel.startNewStrokeAt(point)
+            whiteboardViewModel.setCurrentPenPoint(point)
+            when (whiteboardViewModel.currentTool.value) {
+                Tool.PEN -> whiteboardViewModel.startNewStrokeAt(point)
+                Tool.ERASER -> {
+                    if (whiteboardViewModel.eraserMode.value == EraserMode.RECTANGLE) {
+                        whiteboardViewModel.startEraserRect(point)
+                    } else {
+                        whiteboardViewModel.eraseAt(point)
+                    }
+                }
+                null -> {}
+            }
         }
         whiteboardView.onPenMove = { point ->
-            whiteboardViewModel.addPointToCurrentStroke(point)
+            whiteboardViewModel.setCurrentPenPoint(point)
+            when (whiteboardViewModel.currentTool.value) {
+                Tool.PEN -> whiteboardViewModel.addPointToCurrentStroke(point)
+                Tool.ERASER -> {
+                    if (whiteboardViewModel.eraserMode.value == EraserMode.RECTANGLE) {
+                        whiteboardViewModel.updateEraserRect(point)
+                    } else {
+                        whiteboardViewModel.eraseAt(point)
+                    }
+                }
+                null -> {}
+            }
         }
         whiteboardView.onPenUp = { point ->
-            whiteboardViewModel.completeCurrentStrokeAt(point)
+            whiteboardViewModel.setCurrentPenPoint(null)
+            when (whiteboardViewModel.currentTool.value) {
+                Tool.PEN -> whiteboardViewModel.completeCurrentStrokeAt(point)
+                Tool.ERASER -> {
+                    if (whiteboardViewModel.eraserMode.value == EraserMode.RECTANGLE) {
+                        whiteboardViewModel.completeEraserRect()
+                    } else {
+                        whiteboardViewModel.eraseAt(point)
+                    }
+                }
+                null -> {}
+            }
         }
 
         val documentsButton = Button(this).apply {
@@ -342,6 +384,142 @@ class MainActivity : AppCompatActivity() {
             addView(closeButton)
         }
 
+        val toolRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val penBtn = Button(this@MainActivity).apply {
+                text = "Pen"
+                setOnClickListener { whiteboardViewModel.setCurrentTool(Tool.PEN) }
+            }
+            val eraserBtn = Button(this@MainActivity).apply {
+                text = "Eraser"
+                setOnClickListener { whiteboardViewModel.setCurrentTool(Tool.ERASER) }
+            }
+            addView(penBtn)
+            addView(eraserBtn)
+
+            whiteboardViewModel.currentTool.observe(this@MainActivity) { tool ->
+                penBtn.setTypeface(null, if (tool == Tool.PEN) Typeface.BOLD else Typeface.NORMAL)
+                eraserBtn.setTypeface(null, if (tool == Tool.ERASER) Typeface.BOLD else Typeface.NORMAL)
+            }
+        }
+
+        val toolOptionsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+
+            val eraserOptions = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+
+                val modeGroup = RadioGroup(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+
+                    EraserMode.entries.forEach { mode ->
+                        val rb = RadioButton(this@MainActivity).apply {
+                            text = mode.name.lowercase().replaceFirstChar { it.uppercase() }
+                            setTextColor(Color.WHITE)
+                            id = View.generateViewId()
+                            tag = mode
+                            // Use a ColorStateList to handle checked state color in dark mode
+                            val states = arrayOf(
+                                intArrayOf(-android.R.attr.state_checked),
+                                intArrayOf(android.R.attr.state_checked)
+                            )
+                            val colors = intArrayOf(Color.GRAY, Color.WHITE)
+                            buttonTintList = ColorStateList(states, colors)
+                        }
+                        addView(rb)
+                    }
+
+                    setOnCheckedChangeListener { group, checkedId ->
+                        val rb = group.findViewById<RadioButton>(checkedId)
+                        val mode = rb?.tag as? EraserMode
+                        if (mode != null) {
+                            whiteboardViewModel.setEraserMode(mode)
+                        }
+                    }
+                }
+
+                whiteboardViewModel.eraserMode.observe(this@MainActivity) { mode ->
+                    for (i in 0 until modeGroup.childCount) {
+                        val rb = modeGroup.getChildAt(i) as RadioButton
+                        if (rb.tag == mode) {
+                            rb.isChecked = true
+                            break
+                        }
+                    }
+                }
+                addView(modeGroup)
+            }
+            addView(eraserOptions)
+
+            val sizeContainer = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 8, 0, 8)
+
+                val sizeLabel = TextView(this@MainActivity).apply {
+                    setTextColor(Color.WHITE)
+                    setPadding(16, 0, 16, 0)
+                    minWidth = 200
+                }
+
+                val sizeSlider = SeekBar(this@MainActivity).apply {
+                    layoutParams = LinearLayout.LayoutParams(600, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    max = 1000
+                    
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                            if (!f) return
+                            val isEraser = whiteboardViewModel.currentTool.value == Tool.ERASER
+                            val minVal = if (isEraser) 1f else 0.1f
+                            val maxVal = if (isEraser) 500f else 100f
+                            // Exponential: min * (max/min)^(p/max_p)
+                            val size = minVal * Math.pow((maxVal / minVal).toDouble(), (p / 1000.0)).toFloat()
+                            if (isEraser) {
+                                whiteboardViewModel.setEraserSize(size)
+                            } else {
+                                whiteboardViewModel.setPenSize(size)
+                            }
+                        }
+                        override fun onStartTrackingTouch(s: SeekBar?) {}
+                        override fun onStopTrackingTouch(s: SeekBar?) {}
+                    })
+                }
+
+                fun updateSlider(tool: Tool?, size: Float) {
+                    val isEraser = tool == Tool.ERASER
+                    val minVal = if (isEraser) 1f else 0.1f
+                    val maxVal = if (isEraser) 500f else 100f
+                    val progress = (1000 * Math.log((size / minVal).toDouble()) / Math.log((maxVal / minVal).toDouble())).toInt()
+                    sizeSlider.progress = progress
+                    sizeLabel.text = "${if (isEraser) "Eraser" else "Pen"} Size: %.1f".format(size)
+                }
+
+                whiteboardViewModel.currentTool.observe(this@MainActivity) { tool ->
+                    eraserOptions.visibility = if (tool == Tool.ERASER) View.VISIBLE else View.GONE
+                    val size = if (tool == Tool.ERASER) whiteboardViewModel.eraserSize.value ?: 20f else whiteboardViewModel.penSize.value ?: 2f
+                    updateSlider(tool, size)
+                }
+                whiteboardViewModel.eraserSize.observe(this@MainActivity) { size ->
+                    if (whiteboardViewModel.currentTool.value == Tool.ERASER) updateSlider(Tool.ERASER, size)
+                }
+                whiteboardViewModel.penSize.observe(this@MainActivity) { size ->
+                    if (whiteboardViewModel.currentTool.value == Tool.PEN) updateSlider(Tool.PEN, size)
+                }
+
+                addView(sizeLabel)
+                addView(sizeSlider)
+            }
+            addView(sizeContainer)
+        }
+
+        whiteboardViewModel.currentTool.observe(this) {
+            toolOptionsRow.visibility = View.VISIBLE
+        }
+
         val toolbarLayout = LinearLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -351,8 +529,17 @@ class MainActivity : AppCompatActivity() {
                 setMargins(16, 16, 16, 16)
             }
             orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                setColor(Color.argb(150, 0, 0, 0))
+                cornerRadius = 16f
+            }
+            background = bg
+            setPadding(24, 16, 24, 16)
+
             addView(fileNameTextView)
             addView(buttonRow)
+            addView(toolRow)
+            addView(toolOptionsRow)
         }
 
         val layout = FrameLayout(this).apply {

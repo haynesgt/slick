@@ -1,6 +1,7 @@
 package com.haynesgt.slick
 
 import android.graphics.Color
+import android.graphics.RectF
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -9,9 +10,38 @@ import java.util.Date
 import java.util.Locale
 import kotlin.random.Random
 
+enum class Tool {
+    PEN, ERASER
+}
+
+enum class EraserMode {
+    STROKE, POINT, RECTANGLE
+}
+
 class WhiteboardViewModel : ViewModel() {
     private val _strokes: MutableLiveData<List<Stroke>> = MutableLiveData(listOf())
     val strokes: LiveData<List<Stroke>> get() = _strokes
+
+    private val _currentTool: MutableLiveData<Tool> = MutableLiveData(Tool.PEN)
+    val currentTool: LiveData<Tool> get() = _currentTool
+
+    private val _eraserMode: MutableLiveData<EraserMode> = MutableLiveData(EraserMode.STROKE)
+    val eraserMode: LiveData<EraserMode> get() = _eraserMode
+
+    private val _eraserRect: MutableLiveData<RectF?> = MutableLiveData(null)
+    val eraserRect: LiveData<RectF?> get() = _eraserRect
+
+    private val _eraserSize: MutableLiveData<Float> = MutableLiveData(20f)
+    val eraserSize: LiveData<Float> get() = _eraserSize
+
+    private val _penSize: MutableLiveData<Float> = MutableLiveData(2f)
+    val penSize: LiveData<Float> get() = _penSize
+
+    private val _hoverPoint: MutableLiveData<Vector2D?> = MutableLiveData(null)
+    val hoverPoint: LiveData<Vector2D?> get() = _hoverPoint
+
+    private val _currentPenPoint: MutableLiveData<Vector2D?> = MutableLiveData(null)
+    val currentPenPoint: LiveData<Vector2D?> get() = _currentPenPoint
 
     private val _controlsVisible: MutableLiveData<Boolean> = MutableLiveData(false)
     val controlsVisible: LiveData<Boolean> get() = _controlsVisible
@@ -90,7 +120,7 @@ class WhiteboardViewModel : ViewModel() {
         if (_currentStroke.value != null) {
             completeCurrentStroke()
         }
-        val stroke = Stroke(id, listOf(point))
+        val stroke = Stroke(id, listOf(point), _penSize.value ?: 2f)
         _currentStroke.value = stroke
         return stroke
     }
@@ -98,7 +128,7 @@ class WhiteboardViewModel : ViewModel() {
     fun addPointToCurrentStroke(point: Vector2D) {
         val currentStroke = _currentStroke.value
         if (currentStroke != null) {
-            _currentStroke.value = Stroke(currentStroke.id, currentStroke.points.plus(point))
+            _currentStroke.value = Stroke(currentStroke.id, currentStroke.points.plus(point), currentStroke.width)
         } else {
             startNewStrokeAt(point)
         }
@@ -209,5 +239,140 @@ class WhiteboardViewModel : ViewModel() {
 
     fun setBackgroundColor(color: Int) {
         _backgroundColor.value = color
+    }
+
+    fun setCurrentTool(tool: Tool) {
+        _currentTool.value = tool
+    }
+
+    fun setEraserMode(mode: EraserMode) {
+        _eraserMode.value = mode
+    }
+
+    fun eraseAt(point: Vector2D) {
+        val mode = _eraserMode.value ?: EraserMode.STROKE
+        val currentStrokes = _strokes.value ?: return
+        val size = _eraserSize.value ?: 20f
+        
+        when (mode) {
+            EraserMode.STROKE -> {
+                val threshold = size / (viewPort.value?.scale ?: 1f)
+                val newStrokes = currentStrokes.filter { stroke ->
+                    stroke.points.none { p -> p.distanceTo(point) < threshold }
+                }
+                if (newStrokes.size != currentStrokes.size) {
+                    _strokes.value = newStrokes
+                }
+            }
+            EraserMode.POINT -> {
+                val threshold = size / (viewPort.value?.scale ?: 1f)
+                val newStrokes = mutableListOf<Stroke>()
+                var changed = false
+                
+                for (stroke in currentStrokes) {
+                    val segments = mutableListOf<MutableList<Vector2D>>()
+                    var currentSegment = mutableListOf<Vector2D>()
+                    
+                    for (p in stroke.points) {
+                        if (p.distanceTo(point) < threshold) {
+                            if (currentSegment.isNotEmpty()) {
+                                segments.add(currentSegment)
+                                currentSegment = mutableListOf()
+                            }
+                            changed = true
+                        } else {
+                            currentSegment.add(p)
+                        }
+                    }
+                    if (currentSegment.isNotEmpty()) {
+                        segments.add(currentSegment)
+                    }
+                    
+                    for (segment in segments) {
+                        if (segment.size >= 2) {
+                            newStrokes.add(Stroke(Random.nextLong().toString(), segment, stroke.width))
+                        } else if (segment.size == 1) {
+                            // Keep single points? Maybe not for now.
+                        }
+                    }
+                }
+                
+                if (changed) {
+                    _strokes.value = newStrokes
+                }
+            }
+            EraserMode.RECTANGLE -> {
+                // Handled by completeEraserRect
+            }
+        }
+    }
+
+    fun startEraserRect(point: Vector2D) {
+        _eraserRect.value = RectF(point.x, point.y, point.x, point.y)
+    }
+
+    fun updateEraserRect(point: Vector2D) {
+        val rect = _eraserRect.value ?: return
+        _eraserRect.value = RectF(
+            minOf(rect.left, point.x),
+            minOf(rect.top, point.y),
+            maxOf(rect.right, point.x),
+            maxOf(rect.bottom, point.y)
+        )
+    }
+
+    fun completeEraserRect() {
+        val rect = _eraserRect.value ?: return
+        val currentStrokes = _strokes.value ?: return
+        
+        val newStrokes = mutableListOf<Stroke>()
+        var changed = false
+        
+        for (stroke in currentStrokes) {
+            val segments = mutableListOf<MutableList<Vector2D>>()
+            var currentSegment = mutableListOf<Vector2D>()
+            
+            for (p in stroke.points) {
+                if (rect.contains(p.x, p.y)) {
+                    if (currentSegment.isNotEmpty()) {
+                        segments.add(currentSegment)
+                        currentSegment = mutableListOf()
+                    }
+                    changed = true
+                } else {
+                    currentSegment.add(p)
+                }
+            }
+            if (currentSegment.isNotEmpty()) {
+                segments.add(currentSegment)
+            }
+            
+            for (segment in segments) {
+                if (segment.size >= 2) {
+                    newStrokes.add(Stroke(java.util.UUID.randomUUID().toString(), segment, stroke.width))
+                }
+            }
+        }
+        
+        if (changed) {
+            _strokes.value = newStrokes
+        }
+        _eraserRect.value = null
+    }
+
+    fun setEraserSize(size: Float) {
+        _eraserSize.value = size
+    }
+
+    fun setPenSize(size: Float) {
+        _penSize.value = size
+    }
+
+    fun setHoverPoint(point: Vector2D?) {
+        _hoverPoint.value = point
+    }
+
+    fun setCurrentPenPoint(point: Vector2D?) {
+        _currentPenPoint.value = point
     }
 }

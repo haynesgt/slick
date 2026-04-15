@@ -12,7 +12,8 @@ import kotlin.math.min
 
 data class Stroke(
     val id: String?,
-    val points: List<Vector2D>
+    val points: List<Vector2D>,
+    val width: Float = 2f
 )
 
 class DrawingBoardSvgService(private val context: Context) {
@@ -170,6 +171,7 @@ class DrawingBoardSvgService(private val context: Context) {
                         } else if ("path" == tagName) {
                             val points = mutableListOf<Vector2D>()
                             val d = parser.getAttributeValue(null, "d") ?: ""
+                            val strokeWidth = parser.getAttributeValue(null, "stroke-width")?.toFloatOrNull() ?: 2f
                             
                             // Simple SVG path parsing (M, L, Q)
                             val pattern = """([MLQ])([^MLQ]*)""".toRegex()
@@ -188,7 +190,7 @@ class DrawingBoardSvgService(private val context: Context) {
                             }
                             
                             val id = parser.getAttributeValue(null, "id")
-                            strokes.add(Stroke(id, points))
+                            strokes.add(Stroke(id, points, strokeWidth))
                         }
                     }
                     eventType = parser.next()
@@ -278,7 +280,7 @@ class DrawingBoardSvgService(private val context: Context) {
                         }
                         d.append(" L${points.last().x},${points.last().y}")
 
-                        writer.write("  <path fill=\"none\" stroke=\"black\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"$d\" />\n")
+                        writer.write("  <path fill=\"none\" stroke=\"black\" stroke-width=\"${stroke.width}\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"$d\" />\n")
                     }
                     writer.write("</svg>")
                 }

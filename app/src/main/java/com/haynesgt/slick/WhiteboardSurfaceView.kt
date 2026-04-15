@@ -6,10 +6,12 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.Matrix
+import android.graphics.RectF
 import android.os.Build
 import android.util.AttributeSet
 import android.view.GestureDetector
@@ -81,14 +83,14 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         style = Paint.Style.STROKE
     }
 
-    private val renderer: CanvasFrontBufferedRenderer<List<Vector2D>> = CanvasFrontBufferedRenderer(
+    private val renderer: CanvasFrontBufferedRenderer<Stroke> = CanvasFrontBufferedRenderer(
         this,
-        object : CanvasFrontBufferedRenderer.Callback<List<Vector2D>> {
+        object : CanvasFrontBufferedRenderer.Callback<Stroke> {
             override fun onDrawFrontBufferedLayer(
                 canvas: Canvas,
                 bufferWidth: Int,
                 bufferHeight: Int,
-                param: List<Vector2D>
+                param: Stroke
             ) {
                 // Clear the front buffer to prevent artifacts (jagged lines) from previous segments
                 canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
@@ -97,7 +99,8 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                 }
                 canvas.save()
                 canvas.concat(drawMatrix)
-                drawSingleStroke(canvas, param)
+                paint.strokeWidth = param.width
+                drawSingleStroke(canvas, param.points)
                 canvas.restore()
                 if (viewModel.invertColors.value == true) {
                     canvas.restore()
@@ -108,7 +111,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
                 canvas: Canvas,
                 bufferWidth: Int,
                 bufferHeight: Int,
-                params: Collection<List<Vector2D>>
+                params: Collection<Stroke>
             ) {
                 val strokes = viewModel.strokes.value
                 if (strokes != null) {
@@ -131,7 +134,12 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         viewModel.currentStroke.observe(owner) { stroke ->
             if (stroke != null) {
                 // Render the entire current stroke to the front buffer for real-time smoothing
-                this.renderer.renderFrontBufferedLayer(stroke.points)
+                this.renderer.renderFrontBufferedLayer(stroke)
+            }
+        }
+        viewModel.eraserRect.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
             }
         }
         viewModel.strokes.observe(owner) { strokes ->
@@ -205,6 +213,26 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             }
         }
         viewModel.backgroundColor.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.penSize.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.hoverPoint.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.currentPenPoint.observe(owner) {
+            if (this.holder.surface.isValid) {
+                renderer.commit()
+            }
+        }
+        viewModel.eraserSize.observe(owner) {
             if (this.holder.surface.isValid) {
                 renderer.commit()
             }
@@ -349,6 +377,7 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     onPenDown?.invoke(canvasPoint)
+                    setHoverPoint(null)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     onPenMove?.invoke(canvasPoint)
@@ -360,6 +389,28 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
             return true
         }
         return true
+    }
+
+    override fun onHoverEvent(event: MotionEvent): Boolean {
+        if (event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
+            val canvasPoint = screenToCanvas(event.x, event.y)
+            when (event.action) {
+                MotionEvent.ACTION_HOVER_MOVE -> {
+                    setHoverPoint(canvasPoint)
+                }
+                MotionEvent.ACTION_HOVER_EXIT -> {
+                    setHoverPoint(null)
+                }
+            }
+            return true
+        }
+        return super.onHoverEvent(event)
+    }
+
+    private fun setHoverPoint(point: Vector2D?) {
+        if (::viewModel.isInitialized) {
+            viewModel.setHoverPoint(point)
+        }
     }
 
     private fun drawStrokes(canvas: Canvas, strokes: List<Stroke>) {
@@ -375,14 +426,50 @@ class WhiteboardSurfaceView(context: Context, attrs: AttributeSet? = null) : Sur
         }
 
         for (stroke in strokes) {
+            paint.strokeWidth = stroke.width
             drawSingleStroke(canvas, stroke.points)
         }
         // Also draw the active stroke if it exists, so it stays visible during zoom/pan
         if (::viewModel.isInitialized) {
             viewModel.currentStroke.value?.let { current ->
+                paint.strokeWidth = current.width
                 drawSingleStroke(canvas, current.points)
             }
         }
+        
+        viewModel.eraserRect.value?.let { rect ->
+            val eraserPaint = Paint().apply {
+                color = Color.RED
+                style = Paint.Style.STROKE
+                strokeWidth = 2f / scaleFactor
+                pathEffect = DashPathEffect(floatArrayOf(10f / scaleFactor, 10f / scaleFactor), 0f)
+            }
+            canvas.drawRect(rect, eraserPaint)
+        }
+
+        val indicatorPoint = viewModel.hoverPoint.value ?: viewModel.currentPenPoint.value
+        if (indicatorPoint != null) {
+            if (viewModel.currentTool.value == Tool.ERASER && viewModel.eraserMode.value != EraserMode.RECTANGLE) {
+                val size = viewModel.eraserSize.value ?: 20f
+                val hoverPaint = Paint().apply {
+                    color = Color.RED
+                    style = Paint.Style.STROKE
+                    strokeWidth = 1f / scaleFactor
+                    alpha = 128
+                }
+                canvas.drawCircle(indicatorPoint.x, indicatorPoint.y, size / scaleFactor, hoverPaint)
+            } else if (viewModel.currentTool.value == Tool.PEN) {
+                val size = (viewModel.penSize.value ?: 2f) / 2f
+                val hoverPaint = Paint().apply {
+                    color = Color.BLUE
+                    style = Paint.Style.STROKE
+                    strokeWidth = 1f / scaleFactor
+                    alpha = 128
+                }
+                canvas.drawCircle(indicatorPoint.x, indicatorPoint.y, size, hoverPaint)
+            }
+        }
+
         canvas.restore()
         if (viewModel.invertColors.value == true) {
             canvas.restore()
